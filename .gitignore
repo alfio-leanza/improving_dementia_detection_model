@@ -125,3 +125,6 @@ dmypy.json
 
 #Data
 .progetto_tesi/
+
+#resources forks (MacOS)
+._*
