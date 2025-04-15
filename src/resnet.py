@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 #root = tk.Tk()
 #root.withdraw()
 
-cwt_path = "/home/a.leanza3@laboratori.local/tsclient/alfioleanza/progetto_tesi/dataset-eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
-labels_path = '/home/a.leanza3@laboratori.local/tsclient/alfioleanza/progetto_tesi/dataset-eeg/inference_20250327_171717/true_pred.csv'
+cwt_path = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
+labels_path = '/home/tom/dataset_eeg/inference_20250327_171717/true_pred.csv'
 
 data_split = {
     "train": [37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
