@@ -7,8 +7,6 @@ import os
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import tkinter as tk
-from tkinter import filedialog
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 import seaborn as sns
 import matplotlib.pyplot as plt
