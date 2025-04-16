@@ -56,7 +56,7 @@ for file_name in tqdm(os.listdir(cwt_path)):
         cwt_matrix = np.load(file_path).astype(np.float32)
         cwt_matrices.append(cwt_matrix)
         file_labels.append(labels_dict[file_name])
-        file_datasets.append(dataset_dict[file_name]['dataset'])
+        file_datasets.append(dataset_dict[file_name]) 
 
 def linearizza_cwt(cwt_list):
     n = len(cwt_list)
