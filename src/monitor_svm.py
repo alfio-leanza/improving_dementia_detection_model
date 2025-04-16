@@ -10,83 +10,90 @@ from sklearn.metrics import (
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.special import softmax
+import random
 
-train_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy', allow_pickle = True,).item()
-test_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/test_activations.npy', allow_pickle = True,).item()
-val_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/val_activations.npy', allow_pickle = True,).item()
+# --- Load activations ---
+train_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy', allow_pickle=True).item()
+test_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/test_activations.npy', allow_pickle=True).item()
+val_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/val_activations.npy', allow_pickle=True).item()
 
 for dataset_name, dataset in zip(['train_activations', 'test_activations', 'val_activations'], [train_activations, test_activations, val_activations]):
     list_of_data = [{'crop_file': key, 'valore': value} for key, value in dataset.items()]
     df = pd.DataFrame(list_of_data)
     globals()[f'{dataset_name}_df'] = df
 
-train_activations_df['dataset'] = 'training'
+train_activations_df['dataset'] = 'train'
 test_activations_df['dataset'] = 'test'
 val_activations_df['dataset'] = 'validation'
 
-for dataset_name, dataset in zip(['train_activations_df', 'test_activations_df', 'val_activations_df'], [train_activations_df, test_activations_df, val_activations_df]):
-    globals()[f'{dataset_name}']['valore_softmax'] = globals()[f'{dataset_name}']['valore'].apply(lambda x: softmax(x))
-    globals()[f'{dataset_name}']['pred_label'] = globals()[f'{dataset_name}']['valore_softmax'].apply(lambda x: np.argmax(x))
+for df in [train_activations_df, test_activations_df, val_activations_df]:
+    df['valore_softmax'] = df['valore'].apply(lambda x: softmax(x))
+    df['pred_label'] = df['valore_softmax'].apply(lambda x: np.argmax(x))
 
-all_activations_df = pd.concat([train_activations_df,test_activations_df,val_activations_df], ignore_index = True)
+all_activations_df = pd.concat([train_activations_df, test_activations_df, val_activations_df], ignore_index=True)
 
+# --- Merge con etichette vere ---
 annot = pd.read_csv('/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/annot_all_hc-ftd-ad.csv')
+annot = annot.rename(columns={'label': 'true_label'})
 
-annot = annot.rename(columns={'label':'true_label'})
+true_pred = all_activations_df.merge(annot, on='crop_file')
+true_pred = true_pred.rename(columns={'valore': 'activation_values', 'valore_softmax': 'softmax_values'})
 
-true_pred = all_activations_df.merge(annot, on = 'crop_file')
-
-true_pred = true_pred.rename(columns={'valore':'activation_values'})
-true_pred = true_pred.rename(columns={'valore_softmax':'softmax_values'})
-
+# --- Setup per caricamento CWT ---
 cwt_path = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
-
 df_labels = true_pred.copy()
+
 labels_dict = dict(zip(df_labels['crop_file'], (df_labels['true_label'] == df_labels['pred_label']).astype(int)))
 dataset_dict = dict(zip(df_labels['crop_file'], df_labels['dataset']))
 
-cwt_matrices = []
-file_labels = []
-file_datasets = []
+# --- Suddivisione crop_file per dataset ---
+all_crop_files = [f for f in os.listdir(cwt_path) if f.endswith(".npy") and f in labels_dict]
 
-for file_name in tqdm(os.listdir(cwt_path)):
-    if file_name.endswith(".npy") and file_name in labels_dict:
-        file_path = os.path.join(cwt_path, file_name)
-        
-        cwt_matrix = np.load(file_path).astype(np.float32)
-        cwt_matrices.append(cwt_matrix)
-        file_labels.append(labels_dict[file_name])
-        file_datasets.append(dataset_dict[file_name]) 
+from collections import defaultdict
+dataset_files = defaultdict(list)
 
-def linearizza_batch(cwt_matrices, batch_size=1000):
-    n = len(cwt_matrices)
-    flattened_size = cwt_matrices[0].size
-    output_array = []
+for f in all_crop_files:
+    dataset_type = dataset_dict[f]
+    dataset_files[dataset_type].append(f)
 
-    for i in range(0, n, batch_size):
-        batch = cwt_matrices[i:i+batch_size]
-        flattened_batch = np.array([matrix.flatten() for matrix in batch], dtype=np.float32)
-        output_array.append(flattened_batch)
+# --- Seleziona 10% casuale per ogni dataset ---
+def sample_10_percent(file_list):
+    k = max(1, int(len(file_list) * 0.1))
+    return random.sample(file_list, k)
 
-    return np.vstack(output_array)
+selected_files = []
+for dataset_type in ['train', 'validation', 'test']:
+    selected_files += sample_10_percent(dataset_files[dataset_type])
 
-cwt_flattened = linearizza_batch(cwt_matrices)
+# --- Linearizzazione ---
+def linearizza_batch(file_list, batch_size=1000):
+    flattened_data = []
+    labels = []
+    datasets = []
 
-#def linearizza_cwt(cwt_list):
- ##   n = len(cwt_list)
-   # flattened_size = cwt_list[0].size 
-    #output_array = np.empty((n, flattened_size), dtype=np.float32)
-    
-    #return output_array
+    for i in range(0, len(file_list), batch_size):
+        batch_files = file_list[i:i+batch_size]
+        batch_data = []
+        for f in batch_files:
+            full_path = os.path.join(cwt_path, f)
+            mat = np.load(full_path).astype(np.float32).flatten()
+            batch_data.append(mat)
+            labels.append(labels_dict[f])
+            datasets.append(dataset_dict[f])
+        flattened_data.append(np.array(batch_data))
 
-if cwt_matrices:
-    cwt_flattened = linearizza_batch(cwt_matrices)
+    return np.vstack(flattened_data), np.array(labels), np.array(datasets)
 
-    df_cwt_linearized = pd.DataFrame(cwt_flattened, dtype=np.float32)
-    df_cwt_linearized['label'] = file_labels
-    df_cwt_linearized.columns = df_cwt_linearized.columns.astype(str)
+print("🔄 Linearizzazione in corso solo su 10% di ciascun dataset...")
+cwt_flattened, file_labels, file_datasets = linearizza_batch(selected_files)
 
+# --- Creazione DataFrame finale ---
+df_cwt_linearized = pd.DataFrame(cwt_flattened, dtype=np.float32)
+df_cwt_linearized['label'] = file_labels
+df_cwt_linearized['dataset'] = file_datasets
+df_cwt_linearized.columns = df_cwt_linearized.columns.astype(str)
 
+# --- Split train/val/test ---
 train_df = df_cwt_linearized[df_cwt_linearized['dataset'] == 'train']
 val_df = df_cwt_linearized[df_cwt_linearized['dataset'] == 'validation']
 test_df = df_cwt_linearized[df_cwt_linearized['dataset'] == 'test']
@@ -100,7 +107,7 @@ y_val = val_df['label']
 X_test = test_df.drop(columns=['label', 'dataset'])
 y_test = test_df['label']
 
-
+# --- GridSearch SVM ---
 param_grid = {
     'C': [0.1, 1, 10],
     'kernel': ['linear', 'rbf'],
@@ -114,10 +121,10 @@ grid_search.fit(X_train, y_train)
 print(f"Migliori parametri trovati: {grid_search.best_params_}")
 best_model = grid_search.best_estimator_
 
-
+# --- Valutazione su Validation ---
 y_val_pred = best_model.predict(X_val)
 
-print("\n Metriche sul validation set:")
+print("\n📊 Metriche sul validation set:")
 print(f"Accuracy:  {accuracy_score(y_val, y_val_pred):.4f}")
 print(f"Precision: {precision_score(y_val, y_val_pred):.4f}")
 print(f"Recall:    {recall_score(y_val, y_val_pred):.4f}")
@@ -125,15 +132,15 @@ print(f"F1 Score:  {f1_score(y_val, y_val_pred):.4f}")
 print("\n📋 Classification Report:")
 print(classification_report(y_val, y_val_pred, zero_division=0))
 
-
+# --- Retrain su Train + Validation ---
 X_trainval = pd.concat([X_train, X_val])
 y_trainval = pd.concat([y_train, y_val])
 
-print("\n Riallenamento su train + validation...")
+print("\n♻️ Riallenamento su train + validation...")
 final_model = SVC(**grid_search.best_params_)
 final_model.fit(X_trainval, y_trainval)
 
-
+# --- Test finale ---
 y_pred = final_model.predict(X_test)
 
 print("\n📊 Metriche sul test set:")
@@ -144,7 +151,7 @@ print(f"F1 Score:  {f1_score(y_test, y_pred):.4f}")
 print("\n📋 Classification Report:")
 print(classification_report(y_test, y_pred, zero_division=0))
 
-
+# --- Confusion Matrix ---
 cm = confusion_matrix(y_test, y_pred)
 plt.figure(figsize=(6, 5))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
