@@ -85,23 +85,29 @@ def create_dataloader(split, batch_size=16):
     return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 class ResNet18_19Channels(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=2, dropout_rate=0.5):
         super(ResNet18_19Channels, self).__init__()
         self.model = models.resnet18(pretrained=True)
-        
+
         self.model.conv1 = nn.Conv2d(19, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-        
-        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
+
+        self.model.fc = nn.Sequential(
+            nn.Dropout(p=dropout_rate),
+            nn.Linear(self.model.fc.in_features, num_classes)
+        )
 
     def forward(self, x):
         return self.model(x)
 
 def train_model(model, train_loader, val_loader, epochs=10):
+    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+    
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
+        
         for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -114,21 +120,49 @@ def train_model(model, train_loader, val_loader, epochs=10):
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
         
-        val_acc = evaluate_model(model, val_loader)
-        print(f"Epoch {epoch+1}: Loss={running_loss/len(train_loader):.4f}, Train Acc={100.*correct/total:.2f}%, Val Acc={val_acc:.2f}%")
+        train_loss = running_loss / len(train_loader)
+        train_acc = 100. * correct / total
+        
+        val_loss, val_acc = evaluate_model(model, val_loader, return_loss=True)
+        
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_loss'].append(val_loss)
+        history['val_acc'].append(val_acc)
+        
+        print(f"Epoch {epoch+1}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.2f}%, Val Loss={val_loss:.4f}, Val Acc={val_acc:.2f}%")
+    
+    return history
 
-def evaluate_model(model, loader):
+def evaluate_model(model, loader, return_loss=False):
     model.eval()
     correct = 0
     total = 0
+    all_preds = []
+    all_labels = []
+    running_loss = 0.0
+
     with torch.no_grad():
         for inputs, labels in loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
+            loss = criterion(outputs, labels)
             _, predicted = outputs.max(1)
+            
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
-    return 100. * correct / total
+            
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            running_loss += loss.item()
+
+    acc = 100. * correct / total
+    avg_loss = running_loss / len(loader)
+
+    if return_loss:
+        return avg_loss, acc
+    else:
+        return acc, all_labels, all_preds
 
 def compute_metrics(true_labels, predictions):
     conf_matrix = confusion_matrix(true_labels, predictions)
@@ -143,6 +177,30 @@ def compute_metrics(true_labels, predictions):
         'recall': recall,
         'f1': f1
     }
+
+def plot_training_history(history):
+    plt.figure(figsize=(12,5))
+    
+    # Loss
+    plt.subplot(1,2,1)
+    plt.plot(history['train_loss'], label='Train Loss')
+    plt.plot(history['val_loss'], label='Val Loss')
+    plt.title("Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    
+    # Accuracy
+    plt.subplot(1,2,2)
+    plt.plot(history['train_acc'], label='Train Acc')
+    plt.plot(history['val_acc'], label='Val Acc')
+    plt.title("Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy (%)")
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
 
 def plot_confusion_matrix(conf_matrix):
     plt.figure(figsize=(6,6))
@@ -161,7 +219,8 @@ model = ResNet18_19Channels(num_classes=2).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-train_model(model, train_loader, val_loader, epochs=10)
+history = train_model(model, train_loader, val_loader, epochs=10)
+plot_training_history(history)
 
 test_acc, test_labels, test_preds = evaluate_model(model, test_loader)
 metrics = compute_metrics(test_labels, test_preds)
