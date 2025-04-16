@@ -43,6 +43,7 @@ cwt_path = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
 
 df_labels = true_pred.copy()
 labels_dict = dict(zip(df_labels['crop_file'], (df_labels['true_label'] == df_labels['pred_label']).astype(int)))
+dataset_dict = dict(zip(df_labels['file_name'], df_labels['dataset']))
 
 cwt_matrices = []
 file_labels = []
@@ -55,7 +56,7 @@ for file_name in tqdm(os.listdir(cwt_path)):
         cwt_matrix = np.load(file_path).astype(np.float32)
         cwt_matrices.append(cwt_matrix)
         file_labels.append(labels_dict[file_name])
-        file_datasets.append(labels_dict[file_name]['dataset'])
+        file_datasets.append(dataset_dict[file_name]['dataset'])
 
 def linearizza_cwt(cwt_list):
     n = len(cwt_list)
