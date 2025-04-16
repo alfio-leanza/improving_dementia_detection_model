@@ -58,15 +58,29 @@ for file_name in tqdm(os.listdir(cwt_path)):
         file_labels.append(labels_dict[file_name])
         file_datasets.append(dataset_dict[file_name]) 
 
-def linearizza_cwt(cwt_list):
-    n = len(cwt_list)
-    flattened_size = cwt_list[0].size 
-    output_array = np.empty((n, flattened_size), dtype=np.float32)
+def linearizza_batch(cwt_matrices, batch_size=1000):
+    n = len(cwt_matrices)
+    flattened_size = cwt_matrices[0].size
+    output_array = []
+
+    for i in range(0, n, batch_size):
+        batch = cwt_matrices[i:i+batch_size]
+        flattened_batch = np.array([matrix.flatten() for matrix in batch], dtype=np.float32)
+        output_array.append(flattened_batch)
+
+    return np.vstack(output_array)
+
+cwt_flattened = linearizza_batch(cwt_matrices)
+
+#def linearizza_cwt(cwt_list):
+ ##   n = len(cwt_list)
+   # flattened_size = cwt_list[0].size 
+    #output_array = np.empty((n, flattened_size), dtype=np.float32)
     
-    return output_array
+    #return output_array
 
 if cwt_matrices:
-    cwt_flattened = linearizza_cwt(cwt_matrices)
+    cwt_flattened = linearizza_batch(cwt_matrices)
 
     df_cwt_linearized = pd.DataFrame(cwt_flattened, dtype=np.float32)
     df_cwt_linearized['label'] = file_labels
