@@ -43,7 +43,7 @@ cwt_path = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
 
 df_labels = true_pred.copy()
 labels_dict = dict(zip(df_labels['crop_file'], (df_labels['true_label'] == df_labels['pred_label']).astype(int)))
-dataset_dict = dict(zip(df_labels['file_name'], df_labels['dataset']))
+dataset_dict = dict(zip(df_labels['crop_file'], df_labels['dataset']))
 
 cwt_matrices = []
 file_labels = []
