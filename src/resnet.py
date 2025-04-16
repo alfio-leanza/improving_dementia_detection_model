@@ -87,7 +87,8 @@ def create_dataloader(split, batch_size=16):
 class ResNet18_19Channels(nn.Module):
     def __init__(self, num_classes=2, dropout_rate=0.7):
         super(ResNet18_19Channels, self).__init__()
-        self.model = models.resnet18(pretrained=True)
+        # Utilizza 'weights' invece di 'pretrained' per evitare il warning
+        self.model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
         self.model.conv1 = nn.Conv2d(19, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
         self.model.fc = nn.Sequential(
             nn.Dropout(p=dropout_rate),
