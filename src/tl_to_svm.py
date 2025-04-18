@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.special import softmax
 
 # Caricamento delle attivazioni
 train_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy', allow_pickle=True).item()
