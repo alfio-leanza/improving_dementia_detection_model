@@ -110,7 +110,7 @@ param_grid = {
 svm = GridSearchCV(
     SVC(),
     param_grid,
-    cv=5,
+    #cv=5,
     scoring='accuracy',
     verbose=3,
     n_jobs=-1
