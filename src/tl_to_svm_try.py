@@ -101,7 +101,7 @@ X_test,  y_test  = extract_features(test_loader)
 # Use verbose=True to see libsvm iteration progress
 svm = SVC(C=1.0, kernel='rbf', gamma='scale', degree=3, verbose=True)
 # Fit will print progress messages to stdout
-svm.fit(X_train, y_train)(X_train, y_train)
+svm.fit(X_train, y_train)
 
 # === Test evaluation ===
 y_pred = svm.predict(X_test)
