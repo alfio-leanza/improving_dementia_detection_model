@@ -102,17 +102,17 @@ for phase in ['train', 'val', 'test']:
 
 # === Grid Search SVM ===
 param_grid = {
-    'C': [0.01, 0.1, 1, 10, 100],              # regularisation
-    'gamma': [0.01, 0.1, 1, 10, 100],          # kernel coefficient
-    'kernel': ['linear', 'rbf', 'poly', 'sigmoid'],
-    'degree': [2, 3]                           # for polynomial kernel
+    'C': [0.1, 1,], # 0.01,10, 100],              # regularisation
+    'gamma': [0.1, 1], # 0.01, 10, 100],          # kernel coefficient
+    'kernel': ['linear'], # 'rbf', 'poly', 'sigmoid'],
+    'degree': [2]# 3]                           # for polynomial kernel
 }
 svm = GridSearchCV(
     SVC(),
     param_grid,
     cv=5,
     scoring='accuracy',
-    verbose=2,
+    verbose=3,
     n_jobs=-1
 )
 svm.fit(features['train'], labels['train'])(features['train'], labels['train'])
