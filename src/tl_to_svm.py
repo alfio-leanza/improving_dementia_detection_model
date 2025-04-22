@@ -84,7 +84,7 @@ for split in splits:
 
 # === Estrazione feature con ResNet50 ===
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT).to(device)
+resnet = models.resnet152(weights=models.ResNet152_Weights.DEFAULT).to(device)
 resnet.fc = nn.Identity()  # rimuove la FC per estrazione feature
 resnet.eval()
 
@@ -104,18 +104,17 @@ for phase in ['train', 'val', 'test']:
 param_grid = {
     'C': [0.1, 1,], # 0.01,10, 100],              # regularisation
     'gamma': [0.1, 1], # 0.01, 10, 100],          # kernel coefficient
-    'kernel': ['linear'], # 'rbf', 'poly', 'sigmoid'],
+    'kernel': ['linear', 'rbf'], # 'rbf', 'poly', 'sigmoid'],
     'degree': [2]# 3]                           # for polynomial kernel
 }
 svm = GridSearchCV(
     SVC(),
     param_grid,
-    #cv=5,
     scoring='accuracy',
     verbose=3,
     n_jobs=-1
 )
-svm.fit(features['train'], labels['train'])(features['train'], labels['train'])
+svm.fit(features['train'], labels['train'])
 
 # === Valutazione e salvataggio risultati ===
 y_pred = svm.predict(features['test'])
@@ -123,7 +122,7 @@ acc = accuracy_score(labels['test'], y_pred)
 report = classification_report(labels['test'], y_pred)
 cm = confusion_matrix(labels['test'], y_pred)
 
-output_dir = "/home/alfio/improving_dementia_detection_model/results_tl_to_svm"
+output_dir = "/home/alfio/improving_dementia_detection_model/results_tl_to_svm_grid"
 os.makedirs(output_dir, exist_ok=True)
 
 # Salvataggio confusion matrix come immagine
