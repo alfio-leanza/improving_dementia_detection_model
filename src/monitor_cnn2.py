@@ -13,6 +13,7 @@ from scipy import ndimage  # <-- per zoom
 from scipy.special import softmax
 import matplotlib.pyplot as plt, seaborn as sns
 from torch.optim.swa_utils import AveragedModel, SWALR, update_bn
+import torch.nn.functional as F
 
 # === Load activations and labels ===
 train_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy', allow_pickle=True).item()
@@ -106,7 +107,7 @@ class FocalLoss(nn.Module):
         super().__init__(); self.alpha=alpha; self.gamma=gamma; self.ce=nn.CrossEntropyLoss(reduction='none')
     def forward(self, logits, targets):
         alpha_t = self.alpha.to(logits.device)[targets]      # alpha sullo stesso device
-        ce = TF.cross_entropy(logits, targets, reduction='none')  # niente weight qui
+        ce = F.cross_entropy(logits, targets, reduction='none')  # niente weight qui
         pt = torch.exp(-ce)
         loss = alpha_t * ((1 - pt) ** self.gamma) * ce
         if self.reduction == 'mean':
