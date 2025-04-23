@@ -1,13 +1,15 @@
 # monitor_cnn2d_residual.py
 """
 CNN 2D con Residual‑SE, Focal Loss, BalancedSampler
-Aggiornamento: stampa train_loss, train_acc, val_acc, recall0 a ogni epoch.
+Log: train_loss, train_acc, val_loss, val_acc, recall0.
+Fix: augment ‑ time‑warp corretto, rimosso doppio return, import ndimage.
 """
 import os, numpy as np, pandas as pd, torch, torch.nn as nn, torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import functional as TF
 from sklearn.metrics import recall_score, accuracy_score, classification_report, confusion_matrix
 from tqdm import tqdm
+from scipy import ndimage  # <-- per zoom
 from scipy.special import softmax
 import matplotlib.pyplot as plt, seaborn as sns
 from torch.optim.swa_utils import AveragedModel, SWALR, update_bn
@@ -41,31 +43,35 @@ class CWT_Dataset(Dataset):
     def __getitem__(self, idx):
         x = np.load(os.path.join(self.root, self.files[idx]))  # (40,500,19)
         if self.aug:
-            if np.random.rand()<0.5: x += np.random.normal(0,0.01,x.shape)  # noise
-            if np.random.rand()<0.3:  # time‑warp (zoom along time axis)
+            if np.random.rand()<0.5:  # noise
+                x += np.random.normal(0,0.01,x.shape)
+            # time‑warp (zoom along time axis)
             if np.random.rand()<0.3:
                 rate = np.random.uniform(0.9,1.1)
-                new_len = int(500*rate)
-                x = np.stack([scipy.ndimage.zoom(x[f,:,c], rate, order=1) for f in range(40) for c in range(19)]).reshape(40, new_len, 19)
-                if new_len>500:
-                    x = x[:, :500, :]
+                zoomed = ndimage.zoom(x, (1, rate, 1), order=1)
+                if zoomed.shape[1] > 500:
+                    x = zoomed[:, :500, :]
                 else:
-                    pad = 500-new_len
-                    x = np.pad(x, ((0,0),(0,pad),(0,0)), mode='wrap')
+                    pad = 500 - zoomed.shape[1]
+                    x = np.pad(zoomed, ((0,0),(0,pad),(0,0)), mode='wrap')
             # freq‑shift
             if np.random.rand()<0.3:
                 s = np.random.randint(-3,4); x = np.roll(x,s,axis=0)
-        x = np.transpose(x,(2,0,1))  # (19,40,500)
-        return torch.tensor(x,dtype=torch.float32), self.labels[idx](x,(2,0,1))  # (19,40,500)
-        return torch.tensor(x,dtype=torch.float32), self.labels[idx]
+        x = np.transpose(x,(2,0,1)).astype('float32')  # (19,40,500)
+        return torch.tensor(x), torch.tensor(self.labels[idx])
+
+# === Loader helper ===
 
 def make_loader(split,batch,aug=False):
     recs = [f'sub-{s:03d}' for s in splits[split]]
     subset = true_pred[true_pred['original_rec'].isin(recs)]
     files = subset['crop_file'].tolist(); labels = subset['train_label'].tolist()
-    return DataLoader(CWT_Dataset(files,labels,root_dir,aug), batch_size=batch, shuffle=not aug, num_workers=4, drop_last=aug)
+    return DataLoader(CWT_Dataset(files,labels,root_dir,aug), batch_size=batch, shuffle=aug, num_workers=4, drop_last=aug)
 
 train_loader = make_loader('train',64,aug=True); val_loader = make_loader('val',64); test_loader = make_loader('test',64)
+
+# === ResBlock, CNN2D, FocalLoss (come prima, invariati) ===
+# ... (il resto del codice rimane identico)
 
 # === Model ===
 class ResBlock(nn.Module):
