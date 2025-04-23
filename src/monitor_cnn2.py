@@ -70,9 +70,6 @@ def make_loader(split,batch,aug=False):
 
 train_loader = make_loader('train',64,aug=True); val_loader = make_loader('val',64); test_loader = make_loader('test',64)
 
-# === ResBlock, CNN2D, FocalLoss (come prima, invariati) ===
-# ... (il resto del codice rimane identico)
-
 # === Model ===
 class ResBlock(nn.Module):
     def __init__(self,in_c,out_c,dw=False):
@@ -109,7 +106,7 @@ class FocalLoss(nn.Module):
         super().__init__(); self.alpha=alpha; self.gamma=gamma; self.ce=nn.CrossEntropyLoss(reduction='none')
     def forward(self, logits, targets):
         alpha_t = self.alpha.to(logits.device)[targets]      # alpha sullo stesso device
-        ce = F.cross_entropy(logits, targets, reduction='none')  # niente weight qui
+        ce = TF.cross_entropy(logits, targets, reduction='none')  # niente weight qui
         pt = torch.exp(-ce)
         loss = alpha_t * ((1 - pt) ** self.gamma) * ce
         if self.reduction == 'mean':
