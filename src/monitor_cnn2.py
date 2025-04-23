@@ -42,12 +42,21 @@ class CWT_Dataset(Dataset):
         x = np.load(os.path.join(self.root, self.files[idx]))  # (40,500,19)
         if self.aug:
             if np.random.rand()<0.5: x += np.random.normal(0,0.01,x.shape)  # noise
-            if np.random.rand()<0.3:  # time‑warp
-                r = np.random.uniform(0.9,1.1)
-                x = np.array([np.interp(np.arange(0,500), np.arange(0,500)*r%500, ch) for ch in x.mean(0).T]).T.reshape(40,500,19)
-            if np.random.rand()<0.3:  # freq‑shift
-                s = np.random.randint(-3,3); x = np.roll(x,s,axis=0)
+            if np.random.rand()<0.3:  # time‑warp (zoom along time axis)
+            if np.random.rand()<0.3:
+                rate = np.random.uniform(0.9,1.1)
+                new_len = int(500*rate)
+                x = np.stack([scipy.ndimage.zoom(x[f,:,c], rate, order=1) for f in range(40) for c in range(19)]).reshape(40, new_len, 19)
+                if new_len>500:
+                    x = x[:, :500, :]
+                else:
+                    pad = 500-new_len
+                    x = np.pad(x, ((0,0),(0,pad),(0,0)), mode='wrap')
+            # freq‑shift
+            if np.random.rand()<0.3:
+                s = np.random.randint(-3,4); x = np.roll(x,s,axis=0)
         x = np.transpose(x,(2,0,1))  # (19,40,500)
+        return torch.tensor(x,dtype=torch.float32), self.labels[idx](x,(2,0,1))  # (19,40,500)
         return torch.tensor(x,dtype=torch.float32), self.labels[idx]
 
 def make_loader(split,batch,aug=False):
