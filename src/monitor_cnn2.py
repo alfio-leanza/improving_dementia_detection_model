@@ -107,11 +107,17 @@ class CNN2D(nn.Module):
 class FocalLoss(nn.Module):
     def __init__(self,alpha,gamma=2):
         super().__init__(); self.alpha=alpha; self.gamma=gamma; self.ce=nn.CrossEntropyLoss(reduction='none')
-    def forward(self,logits,targets):
-        ce_loss = self.ce(logits,targets)
-        pt = torch.exp(-ce_loss)
-        alpha_t = self.alpha[targets].to(logits.device)
-        return (alpha_t*(1-pt)**self.gamma*ce_loss).mean()
+    def forward(self, logits, targets):
+        alpha_t = self.alpha.to(logits.device)[targets]      # alpha sullo stesso device
+        ce = F.cross_entropy(logits, targets, reduction='none')  # niente weight qui
+        pt = torch.exp(-ce)
+        loss = alpha_t * ((1 - pt) ** self.gamma) * ce
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
+
 
 alpha=torch.tensor([0.56,0.44])
 criterion = FocalLoss(alpha,2.0)
