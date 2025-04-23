@@ -61,7 +61,7 @@ train_loader = make_loader('train',64,aug=True); val_loader = make_loader('val',
 # === Model ===
 class ResBlock(nn.Module):
     def __init__(self,in_c,out_c,dw=False):
-        super().__init__(); g = out_c if dw else 1
+        super().__init__(); g = in_c if dw else 1
         self.conv = nn.Sequential(
             nn.Conv2d(in_c,out_c,3,1,1,groups=g,bias=False), nn.BatchNorm2d(out_c), nn.ReLU(),
             nn.Conv2d(out_c,out_c,3,1,1,groups=g,bias=False), nn.BatchNorm2d(out_c))
