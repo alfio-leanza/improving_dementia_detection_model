@@ -103,7 +103,7 @@ criterion = FocalLoss(alpha,2.0)
 model = CNN2D().cuda(); epochs=60
 optimizer = optim.AdamW(model.parameters(),lr=3e-4,weight_decay=1e-2)
 scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,T_0=10,T_mult=2,eta_min=1e-6)
-swa_model = AveragedModel(model); swa_start=int(0.8*epochs); swa_scheduler = SWALR(optimizer,anneal_epochs=10,anneal_strategy='cos')
+swa_model = AveragedModel(model); swa_start=int(0.8*epochs); swa_scheduler = SWALR(optimizer, swa_lr=1e-4, anneal_epochs=10, anneal_strategy='cos')
 
 # === Train / Eval helpers ===
 @torch.no_grad()
