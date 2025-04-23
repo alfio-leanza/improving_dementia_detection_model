@@ -104,7 +104,7 @@ class CNN2D(nn.Module):
 # === Loss, optimizer, scheduler ===
 class FocalLoss(nn.Module):
     def __init__(self,alpha,gamma=2):
-        super().__init__(); self.alpha=alpha; self.gamma=gamma; self.ce=nn.CrossEntropyLoss(reduction='none')
+        super().__init__(); self.alpha=alpha; self.gamma=gamma; self.reduction=reduction; self.ce=nn.CrossEntropyLoss(reduction='none')
     def forward(self, logits, targets):
         alpha_t = self.alpha.to(logits.device)[targets]      # alpha sullo stesso device
         ce = F.cross_entropy(logits, targets, reduction='none')  # niente weight qui
