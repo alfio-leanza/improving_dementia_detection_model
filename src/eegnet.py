@@ -1,11 +1,3 @@
-# monitor_eegnet_pretrained.py
-"""
-EEGNet‑v4 fine‑tuning – salvataggio uniforme (model + CSV per train/val/test)
-============================================================================
-• Architettura **invariata**.
-• Aggiunti CSV dettagliati (logits, softmax list, goodness) per ciascun set.
-• Salva anche modello finito `eegnet_finetuned.pth`.
-"""
 import os, argparse, numpy as np, pandas as pd, torch, torch.nn as nn, torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
