@@ -19,8 +19,8 @@ Salva automaticamente:
 # ====== PATH & COSTANTI (adatta ai tuoi percorsi) ======
 root_dir = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
 annot_path = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/annot_all_hc-ftd-ad.csv"
-monitor_path = "/home/alfio/improving_dementia_detection/results_cnn/cnn_channelattention.pth" 
-results_dir = "/home/alfio/improving_dementia_detection/results_main_model"
+monitor_path = "/home/alfio/improving_dementia_detection_model/results_cnn/cnn_channelattention.pth" 
+results_dir = "/home/alfio/improving_dementia_detection_model/results_main_model"
 os.makedirs(results_dir, exist_ok=True)
 
 # ====== DEFINIZIONE MONITOR (già presente nel tuo progetto) ======
