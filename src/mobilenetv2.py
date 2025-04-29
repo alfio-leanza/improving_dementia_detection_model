@@ -184,7 +184,7 @@ def compute_metrics(true_labels, predictions):
 # 7. Salvataggio output
 # ============================
 
-def save_all_outputs(history, conf_matrix, true_labels, pred_labels, output_dir="/home/alfio/improving_dementia_detection_model/results"):
+def save_all_outputs(history, conf_matrix, true_labels, pred_labels, output_dir="/home/alfio/improving_dementia_detection_model/results_mobilenetv2"):
     os.makedirs(output_dir, exist_ok=True)
 
     # -- Grafico History --
