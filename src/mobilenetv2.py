@@ -65,24 +65,51 @@ df_labels['train_label'] = (df_labels['pred_label'] == df_labels['true_label']).
 # 4. Dataset CWT
 # ============================
 class CWT_Dataset(Dataset):
-    def __init__(self, file_list, labels, root_dir):
+    """Dataset di scalogrammi CWT con augmentation opzionale.
+    Gli input vengono salvati come (40, 500, 19) e convertiti a (19, 40, 500)."""
+
+    def __init__(self, file_list, labels, root_dir, augment: bool = False):
         self.file_list = file_list
         self.labels = labels
         self.root_dir = root_dir
-    
+        self.augment = augment
+
     def __len__(self):
         return len(self.file_list)
-    
+
+    def _time_shift(self, tensor):
+        # shift casuale lungo la dimensione tempo (asse 2)
+        if torch.rand(1) < 0.5:
+            shift = torch.randint(1, tensor.shape[2], (1,)).item()
+            tensor = torch.roll(tensor, shifts=shift, dims=2)
+        return tensor
+
+    def _gaussian_noise(self, tensor, sigma=0.05):
+        if torch.rand(1) < 0.5:
+            noise = torch.randn_like(tensor) * sigma
+            tensor = tensor + noise
+        return tensor
+
+    def _channel_dropout(self, tensor):
+        # azzera un canale casuale (asse 0)
+        if torch.rand(1) < 0.3:
+            ch = torch.randint(0, tensor.shape[0], (1,)).item()
+            tensor[ch, :, :] = 0
+        return tensor
+
     def __getitem__(self, idx):
         file_name = self.file_list[idx]
         label = self.labels[idx]
-        file_path = os.path.join(self.root_dir, file_name)
-        cwt_data = np.load(file_path)
-        cwt_data = torch.tensor(cwt_data, dtype=torch.float32)
-        cwt_data = cwt_data.permute(2, 0, 1)  # (40, 500, 19) -> (19, 40, 500)
-        return cwt_data, label
+        data = np.load(os.path.join(self.root_dir, file_name))
+        tensor = torch.tensor(data, dtype=torch.float32).permute(2, 0, 1)  # (19, 40, 500)
 
-def create_dataloader(split, batch_size=16):
+        if self.augment:
+            tensor = self._time_shift(tensor)
+            tensor = self._gaussian_noise(tensor)
+            tensor = self._channel_dropout(tensor)
+        return tensor, label
+
+def create_dataloader(split, batch_size=16, augment = False):
     subset = df_labels[df_labels['original_rec'].isin([f'sub-{s:03d}' for s in data_split[split]])]
     file_list = list(subset['crop_file'])
     labels = list(subset['train_label'])
@@ -93,7 +120,7 @@ def create_dataloader(split, batch_size=16):
 # 5. MobileNetV2 con 19 canali
 # ============================
 class MobileNetV2_19Channels(nn.Module):
-    def __init__(self, num_classes=2, dropout_rate=0.7):
+    def __init__(self, num_classes=2, dropout_rate=0.5):
         super().__init__()
         # Carichiamo MobileNetV2 pre-addestrata su ImageNet
         self.model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
@@ -248,7 +275,7 @@ def save_all_outputs(history, conf_matrix, true_labels, pred_labels, output_dir=
 
 if __name__ == "__main__":
     # Dataloader
-    train_loader = create_dataloader("train")
+    train_loader = create_dataloader("train", augment = True)
     val_loader = create_dataloader("val")
     test_loader = create_dataloader("test")
 
@@ -257,8 +284,8 @@ if __name__ == "__main__":
     model = MobileNetV2_19Channels(num_classes=2, dropout_rate=0.7).to(device)
 
     # Loss & optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    criterion = nn.CrossEntropyLoss(label_smoothing= 0.1)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3)
 
     # Training
     history = train_model(model, train_loader, val_loader, epochs=10)
