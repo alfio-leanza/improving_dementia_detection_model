@@ -7,297 +7,206 @@ import os
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, classification_report
+from sklearn.metrics import (confusion_matrix, accuracy_score, precision_score,
+                             recall_score, f1_score, classification_report)
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.special import softmax
 
-# ============================
-# 1. Caricamento attivazioni
-# ============================
-train_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy', allow_pickle=True).item()
-test_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/test_activations.npy', allow_pickle=True).item()
-val_activations = np.load('/home/tom/dataset_eeg/inference_20250327_171717/val_activations.npy', allow_pickle=True).item()
+"""
+MobileNetV2 fine‑tuning per classificazione "predizione‑corretta" su CWT EEG
+────────────────────────────────────────────────────────────────────────────
+• Data‑augmentation sul solo training set (time‑shift, rumore, channel‑dropout)
+• Class balancing (pesi inversi alla frequenza)
+• Label smoothing 0.1
+• Scheduler ReduceLROnPlateau (val loss) + Early‑Stopping (patience 5)
+• **Salvataggio**: training_history.png, confusion_matrix.png / .csv, classification_report.txt, metrics_summary.csv
+"""
+# ======================================================
+# 1. Caricamento attivazioni (predizioni modello base)
+# ======================================================
+train_acts = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy', allow_pickle=True).item()
+val_acts   = np.load('/home/tom/dataset_eeg/inference_20250327_171717/val_activations.npy',   allow_pickle=True).item()
+test_acts  = np.load('/home/tom/dataset_eeg/inference_20250327_171717/test_activations.npy',  allow_pickle=True).item()
 
-for dataset_name, dataset in zip(['train_activations', 'test_activations', 'val_activations'],
-                                 [train_activations, test_activations, val_activations]):
-    list_of_data = [{'crop_file': key, 'valore': value} for key, value in dataset.items()]
-    df = pd.DataFrame(list_of_data)
-    globals()[f'{dataset_name}_df'] = df
+def _to_df(name,dic):
+    df = pd.DataFrame([{'crop_file':k,'activation_values':v} for k,v in dic.items()])
+    df['dataset']=name
+    df['pred_label']=df['activation_values'].apply(lambda x: np.argmax(softmax(x)))
+    return df
 
-train_activations_df['dataset'] = 'training'
-test_activations_df['dataset'] = 'test'
-val_activations_df['dataset'] = 'validation'
+train_df,val_df,test_df=[_to_df(n,d) for n,d in zip(['train','val','test'],[train_acts,val_acts,test_acts])]
+all_act_df=pd.concat([train_df,val_df,test_df],ignore_index=True)
 
-for dataset_name in ['train_activations_df', 'test_activations_df', 'val_activations_df']:
-    df_tmp = globals()[dataset_name]
-    df_tmp['valore_softmax'] = df_tmp['valore'].apply(lambda x: softmax(x))
-    df_tmp['pred_label'] = df_tmp['valore_softmax'].apply(lambda x: np.argmax(x))
-
-all_activations_df = pd.concat([train_activations_df, test_activations_df, val_activations_df], ignore_index=True)
-
-# ============================
-# 2. Caricamento annotazioni
-# ============================
+# ======================================================
+# 2. Annotazioni & label (1 = predizione corretta)
+# ======================================================
 annot = pd.read_csv('/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/annot_all_hc-ftd-ad.csv')
-annot = annot.rename(columns={'label': 'true_label'})
+annot = annot.rename(columns={'label':'true_label'})
 
-true_pred = all_activations_df.merge(annot, on='crop_file')
-true_pred = true_pred.rename(columns={'valore': 'activation_values'})
-true_pred = true_pred.rename(columns={'valore_softmax': 'softmax_values'})
+df_labels = all_act_df.merge(annot,on='crop_file')
+df_labels['crop_file']=df_labels['crop_file'].apply(os.path.basename)
+df_labels['train_label']=(df_labels['pred_label']==df_labels['true_label']).astype(int)
 
-# ============================
-# 3. Path CWT & split
-# ============================
-cwt_path = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt"
+# ======================================================
+# 3. Path CWT & split soggetti
+# ======================================================
+cwt_path='/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt'
 
-data_split = {
-    "train": [37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
-    "val":   [54, 55, 56, 57, 58, 59, 79, 80, 81, 82, 83, 22, 23, 24, 25, 26, 27, 28],
-    "test":  [60, 61, 62, 63, 64, 65, 84, 85, 86, 87, 88, 29, 30, 31, 32, 33, 34, 35, 36]
-}
+split={'train':[37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,66,67,68,69,70,71,72,73,74,75,76,77,78,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+       'val'  :[54,55,56,57,58,59,79,80,81,82,83,22,23,24,25,26,27,28],
+       'test' :[60,61,62,63,64,65,84,85,86,87,88,29,30,31,32,33,34,35,36]}
 
-df_labels = true_pred.copy()
-df_labels['crop_file'] = df_labels['crop_file'].apply(lambda x: os.path.basename(x))
-df_labels['train_label'] = (df_labels['pred_label'] == df_labels['true_label']).astype(int)
-
-# ============================
-# 4. Dataset CWT
-# ============================
+# ======================================================
+# 4. Dataset con Augmentation
+# ======================================================
 class CWT_Dataset(Dataset):
-    """Dataset di scalogrammi CWT con augmentation opzionale.
-    Gli input vengono salvati come (40, 500, 19) e convertiti a (19, 40, 500)."""
-
-    def __init__(self, file_list, labels, root_dir, augment: bool = False):
-        self.file_list = file_list
-        self.labels = labels
-        self.root_dir = root_dir
-        self.augment = augment
-
-    def __len__(self):
-        return len(self.file_list)
-
-    def _time_shift(self, tensor):
-        # shift casuale lungo la dimensione tempo (asse 2)
-        if torch.rand(1) < 0.5:
-            shift = torch.randint(1, tensor.shape[2], (1,)).item()
-            tensor = torch.roll(tensor, shifts=shift, dims=2)
-        return tensor
-
-    def _gaussian_noise(self, tensor, sigma=0.05):
-        if torch.rand(1) < 0.5:
-            noise = torch.randn_like(tensor) * sigma
-            tensor = tensor + noise
-        return tensor
-
-    def _channel_dropout(self, tensor):
-        # azzera un canale casuale (asse 0)
-        if torch.rand(1) < 0.3:
-            ch = torch.randint(0, tensor.shape[0], (1,)).item()
-            tensor[ch, :, :] = 0
-        return tensor
-
-    def __getitem__(self, idx):
-        file_name = self.file_list[idx]
-        label = self.labels[idx]
-        data = np.load(os.path.join(self.root_dir, file_name))
-        tensor = torch.tensor(data, dtype=torch.float32).permute(2, 0, 1)  # (19, 40, 500)
-
+    def __init__(self, files, labels, root, augment=False):
+        self.files=files; self.labels=labels; self.root=root; self.augment=augment
+    def __len__(self): return len(self.files)
+    def _time_shift(self,x):
+        if torch.rand(1)<0.5:
+            s=torch.randint(1,x.shape[2],(1,)).item(); x=torch.roll(x,s,2)
+        return x
+    def _noise(self,x,sigma=0.05):
+        return x+torch.randn_like(x)*sigma if torch.rand(1)<0.5 else x
+    def _channel_drop(self,x):
+        if torch.rand(1)<0.3:
+            ch=torch.randint(0,x.shape[0],(1,)).item(); x[ch]=0
+        return x
+    def __getitem__(self,idx):
+        x=np.load(os.path.join(self.root,self.files[idx]))
+        x=torch.tensor(x,dtype=torch.float32).permute(2,0,1)
         if self.augment:
-            tensor = self._time_shift(tensor)
-            tensor = self._gaussian_noise(tensor)
-            tensor = self._channel_dropout(tensor)
-        return tensor, label
+            x=self._channel_drop(self._noise(self._time_shift(x)))
+        return x,self.labels[idx]
 
-def create_dataloader(split, batch_size=16, augment = False):
-    subset = df_labels[df_labels['original_rec'].isin([f'sub-{s:03d}' for s in data_split[split]])]
-    file_list = list(subset['crop_file'])
-    labels = list(subset['train_label'])
-    dataset = CWT_Dataset(file_list, labels, cwt_path)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+def loader(split_name,batch=32,augment=False):
+    subs=[f'sub-{s:03d}' for s in split[split_name]]
+    subdf=df_labels[df_labels['original_rec'].isin(subs)]
+    ds=CWT_Dataset(list(subdf['crop_file']),list(subdf['train_label']),cwt_path,augment)
+    return DataLoader(ds,batch_size=batch,shuffle=True,num_workers=4,pin_memory=True)
 
-# ============================
-# 5. MobileNetV2 con 19 canali
-# ============================
-class MobileNetV2_19Channels(nn.Module):
-    def __init__(self, num_classes=2, dropout_rate=0.5):
+# ======================================================
+# 5. MobileNetV2 a 19 canali
+# ======================================================
+class MobileNet19(nn.Module):
+    def __init__(self,drop=0.5):
         super().__init__()
-        # Carichiamo MobileNetV2 pre-addestrata su ImageNet
-        self.model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
-        # Sostituiamo la prima convoluzione per adattare 19 canali (invece di 3)
-        self.model.features[0][0] = nn.Conv2d(19, 32, kernel_size=3, stride=2, padding=1, bias=False)
-        # Modifichiamo il classificatore con Dropout
-        in_features = self.model.classifier[1].in_features
-        self.model.classifier = nn.Sequential(
-            nn.Dropout(p=dropout_rate),
-            nn.Linear(in_features, num_classes)
-        )
+        m=models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+        m.features[0][0]=nn.Conv2d(19,32,kernel_size=3,stride=2,padding=1,bias=False)
+        in_f=m.classifier[1].in_features
+        m.classifier=nn.Sequential(nn.Dropout(drop),nn.Linear(in_f,2))
+        self.net=m
+    def forward(self,x): return self.net(x)
 
-    def forward(self, x):
-        return self.model(x)
+# ======================================================
+# 6. Early‑Stopping helper
+# ======================================================
+class EarlyStop:
+    def __init__(self,patience=5):
+        self.patience=patience; self.best=float('inf'); self.counter=0; self.chk=None
+    def step(self,val_loss,model):
+        if val_loss<self.best-1e-4:
+            self.best=val_loss; self.counter=0
+            self.chk={k:v.detach().cpu() for k,v in model.state_dict().items()}
+        else:
+            self.counter+=1
+        return self.counter>self.patience
+    def load_best(self,model):
+        model.load_state_dict(self.chk)
 
-# ============================
-# 6. Funzioni training & evaluation
-# ============================
+# ======================================================
+# 7. Train & Evaluate utilities
+# ======================================================
 
-def train_model(model, train_loader, val_loader, epochs=10):
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
-    
-    for epoch in range(epochs):
-        model.train()
-        running_loss, correct, total = 0.0, 0, 0
-        
-        for inputs, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-        
-        train_loss = running_loss / len(train_loader)
-        train_acc = 100. * correct / total
-        
-        val_loss, val_acc = evaluate_model(model, val_loader, return_loss=True)
-        
-        history['train_loss'].append(train_loss)
-        history['train_acc'].append(train_acc)
-        history['val_loss'].append(val_loss)
-        history['val_acc'].append(val_acc)
-        
-        print(f"Epoch {epoch+1}: Train Loss={train_loss:.4f}, Train Acc={train_acc:.2f}%, Val Loss={val_loss:.4f}, Val Acc={val_acc:.2f}%")
-    return history
-
-def evaluate_model(model, loader, return_loss=False):
-    model.eval()
-    correct, total, running_loss = 0, 0, 0.0
-    all_preds, all_labels = [], []
-    
+def evaluate(model,dl,loss_fn):
+    model.eval(); tot=0; corr=0; lsum=0; preds=[]; labels=[]
     with torch.no_grad():
-        for inputs, labels in loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
-            all_preds.extend(predicted.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-            running_loss += loss.item()
+        for x,y in dl:
+            x,y=x.to(device),y.to(device)
+            out=model(x); loss=loss_fn(out,y)
+            _,p=out.max(1); tot+=y.size(0); corr+=p.eq(y).sum().item()
+            lsum+=loss.item(); preds+=p.cpu().tolist(); labels+=y.cpu().tolist()
+    return lsum/len(dl),100.*corr/tot,labels,preds
 
-    acc = 100. * correct / total
-    avg_loss = running_loss / len(loader)
-    return (avg_loss, acc) if return_loss else (acc, all_labels, all_preds)
+# ======================================================
+# 8. Funzione di training
+# ======================================================
 
-def compute_metrics(true_labels, predictions):
-    conf_matrix = confusion_matrix(true_labels, predictions)
-    acc = accuracy_score(true_labels, predictions)
-    precision = precision_score(true_labels, predictions)
-    recall = recall_score(true_labels, predictions)
-    f1 = f1_score(true_labels, predictions)
-    return {
-        'conf_matrix': conf_matrix,
-        'accuracy': acc,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1
+def train(model,train_dl,val_dl,loss_fn,opt,sched,epochs=50):
+    hist={'train_loss':[],'train_acc':[],'val_loss':[],'val_acc':[]}
+    es=EarlyStop(patience=5)
+    for ep in range(epochs):
+        model.train(); tot=0; corr=0; lsum=0
+        for x,y in tqdm(train_dl,desc=f'Epoch {ep+1}'):
+            x,y=x.to(device),y.to(device)
+            opt.zero_grad(); out=model(x); loss=loss_fn(out,y); loss.backward(); opt.step()
+            _,p=out.max(1); tot+=y.size(0); corr+=p.eq(y).sum().item(); lsum+=loss.item()
+        tr_loss, tr_acc = lsum/len(train_dl),100.*corr/tot
+        val_loss,val_acc,_,_=evaluate(model,val_dl,loss_fn)
+        sched.step(val_loss)
+        hist['train_loss'].append(tr_loss); hist['train_acc'].append(tr_acc)
+        hist['val_loss'].append(val_loss);   hist['val_acc'].append(val_acc)
+        print(f'Ep{ep+1}: TL={tr_loss:.3f} TA={tr_acc:.2f}% VL={val_loss:.3f} VA={val_acc:.2f}%')
+        if es.step(val_loss,model):
+            print('[EarlyStop] no improvement for',es.patience,'epochs'); break
+    es.load_best(model)
+    return hist
+
+# ======================================================
+# 9. Salvataggio risultati
+# ======================================================
+
+def save_outputs(hist,metrics,outdir='/home/alfio/improving_dementia_detection_model/results_mobilenetv2'):
+    os.makedirs(outdir,exist_ok=True)
+    # history plot
+    plt.figure(figsize=(12,5))
+    plt.subplot(1,2,1); plt.plot(hist['train_loss'],'-o'); plt.plot(hist['val_loss'],'-o'); plt.legend(['Train','Val']); plt.title('Loss');
+    plt.subplot(1,2,2); plt.plot(hist['train_acc'],'-o'); plt.plot(hist['val_acc'],'-o'); plt.legend(['Train','Val']); plt.title('Accuracy');
+    plt.tight_layout(); plt.savefig(os.path.join(outdir,'training_history.png')); plt.close()
+    # confusion matrix
+    cm=metrics['conf_matrix']; sns.heatmap(cm,annot=True,fmt='d',cmap='Blues',xticklabels=['Pred0','Pred1'],yticklabels=['True0','True1'])
+    plt.title('Confusion Matrix'); plt.savefig(os.path.join(outdir,'confusion_matrix.png')); plt.close()
+    pd.DataFrame(cm).to_csv(os.path.join(outdir,'confusion_matrix.csv'),index=False)
+    # classification report
+    with open(os.path.join(outdir,'classification_report.txt'),'w') as f:
+        f.write(metrics['report'])
+    # summary csv
+    pd.DataFrame([{
+        'accuracy':metrics['accuracy'],'precision':metrics['precision'],
+        'recall':metrics['recall'],'f1':metrics['f1']
+    }]).to_csv(os.path.join(outdir,'metrics_summary.csv'),index=False)
+
+# ======================================================
+# 10. Main eseguibile
+# ======================================================
+if __name__=='__main__':
+    device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # dataloader
+    train_dl=loader('train',batch=32,augment=True)
+    val_dl  =loader('val'  ,batch=32,augment=False)
+    test_dl =loader('test' ,batch=32,augment=False)
+    # class weights
+    counts=np.bincount([y for _,y in train_dl.dataset])
+    w=torch.tensor(1.0/counts,dtype=torch.float32)
+    # model and optimizer
+    model=MobileNet19(drop=0.5).to(device)
+    loss_fn=nn.CrossEntropyLoss(weight=w.to(device),label_smoothing=0.1)
+    opt=optim.AdamW(model.parameters(),lr=1e-3,weight_decay=1e-3)
+    sched=optim.lr_scheduler.ReduceLROnPlateau(opt,mode='min',factor=0.5,patience=2)
+    # train
+    history=train(model,train_dl,val_dl,loss_fn,opt,sched,epochs=50)
+    # test
+    test_loss,test_acc,test_lbls,test_preds=evaluate(model,test_dl,loss_fn)
+    metrics={
+        'accuracy':test_acc,
+        'precision':precision_score(test_lbls,test_preds),
+        'recall':recall_score(test_lbls,test_preds),
+        'f1':f1_score(test_lbls,test_preds),
+        'conf_matrix':confusion_matrix(test_lbls,test_preds),
+        'report':classification_report(test_lbls,test_preds,target_names=['Class0','Class1'])
     }
-
-# ============================
-# 7. Salvataggio output
-# ============================
-
-def save_all_outputs(history, conf_matrix, true_labels, pred_labels, output_dir="/home/alfio/improving_dementia_detection_model/results_mobilenetv2"):
-    os.makedirs(output_dir, exist_ok=True)
-
-    # -- Grafico History --
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(history['train_loss'], label='Train Loss')
-    plt.plot(history['val_loss'], label='Val Loss')
-    plt.title('Loss over Epochs')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-
-    plt.subplot(1, 2, 2)
-    plt.plot(history['train_acc'], label='Train Acc')
-    plt.plot(history['val_acc'], label='Val Acc')
-    plt.title('Accuracy over Epochs')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.legend()
-
-    plt.tight_layout()
-    history_path = os.path.join(output_dir, "training_history.png")
-    plt.savefig(history_path)
-    print(f"[INFO] Training history salvata in: {history_path}")
-    plt.close()
-
-    # -- Confusion Matrix --
-    plt.figure(figsize=(6, 6))
-    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
-                xticklabels=['Pred 0', 'Pred 1'], yticklabels=['True 0', 'True 1'])
-    plt.title('Confusion Matrix')
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
-    plt.tight_layout()
-    cm_path = os.path.join(output_dir, "confusion_matrix.png")
-    plt.savefig(cm_path)
-    print(f"[INFO] Confusion matrix salvata in: {cm_path}")
-    plt.close()
-
-    # -- Classification Report --
-    report = classification_report(true_labels, pred_labels, target_names=['Class 0', 'Class 1'])
-    report_path = os.path.join(output_dir, "classification_report.txt")
-    with open(report_path, "w") as f:
-        f.write(report)
-    print(f"[INFO] Classification report salvato in: {report_path}")
-
-    # -- CSV metriche --
-    summary_df = pd.DataFrame([{
-        "accuracy": accuracy_score(true_labels, pred_labels),
-        "precision": precision_score(true_labels, pred_labels),
-        "recall": recall_score(true_labels, pred_labels),
-        "f1_score": f1_score(true_labels, pred_labels)
-    }])
-    metrics_path = os.path.join(output_dir, "metrics_summary.csv")
-    summary_df.to_csv(metrics_path, index=False)
-    print(f"[INFO] Metriche salvate in: {metrics_path}")
-
-# ============================
-# 8. Main
-# ============================
-
-if __name__ == "__main__":
-    # Dataloader
-    train_loader = create_dataloader("train", augment = True)
-    val_loader = create_dataloader("val")
-    test_loader = create_dataloader("test")
-
-    # Device & modello
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MobileNetV2_19Channels(num_classes=2, dropout_rate=0.7).to(device)
-
-    # Loss & optimizer
-    criterion = nn.CrossEntropyLoss(label_smoothing= 0.1)
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3)
-
-    # Training
-    history = train_model(model, train_loader, val_loader, epochs=10)
-
-    # Test
-    test_acc, test_labels, test_preds = evaluate_model(model, test_loader)
-    metrics = compute_metrics(test_labels, test_preds)
-
-    print(f"Test Accuracy: {test_acc:.2f}%")
-    print(f"Precision: {metrics['precision']:.2f}")
-    print(f"Recall: {metrics['recall']:.2f}")
-    print(f"F1 Score: {metrics['f1']:.2f}")
-
-    # Salvataggio risultati
-    save_all_outputs(history, metrics['conf_matrix'], test_labels, test_preds)
+    print(f"Test Acc {test_acc:.2f}% | P {metrics['precision']:.2f} R {metrics['recall']:.2f} F1 {metrics['f1']:.2f}")
+    # save
+    save_outputs(history,metrics)
