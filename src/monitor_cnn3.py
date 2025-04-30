@@ -15,7 +15,7 @@ class CNN_ChannelAttention(nn.Module):
        configurata come Self-Normalizing Network (SELU + AlphaDropout)."""
 
     def __init__(self, num_channels: int = 19, num_classes: int = 2,
-                 drop_p_conv=(0.2, 0.2, 0.3, 0.3), drop_p_fc=0.6):
+                 drop_p_conv=(0.2, 0.2, 0.3, 0.3), drop_p_fc=0.4):
         super().__init__()
 
         self.conv_block = nn.Sequential(
@@ -28,7 +28,7 @@ class CNN_ChannelAttention(nn.Module):
             nn.Conv2d(64, 128, 3, padding=1),
             nn.SELU(), nn.AlphaDropout(drop_p_conv[2]), nn.MaxPool2d(2),
 
-            nn.Conv2d(128, 256, 3, padding=1),
+            nn.Conv2d(128, 128, 3, padding=1),
             nn.SELU(), nn.AlphaDropout(drop_p_conv[3]),           
 
             nn.AdaptiveAvgPool2d(1) 
@@ -36,15 +36,15 @@ class CNN_ChannelAttention(nn.Module):
 
         # channel-attention (SE-style)
         self.channel_attention = nn.Sequential(
-            nn.Linear(256, 64, bias=False),
+            nn.Linear(128, 64, bias=False),
             nn.SELU(),
-            nn.Linear(64, 256, bias=False),
+            nn.Linear(64, 128, bias=False),
             nn.Sigmoid()
         )
 
         self.classifier = nn.Sequential(
             nn.AlphaDropout(drop_p_fc),
-            nn.Linear(256, num_classes)
+            nn.Linear(128, num_classes)
         )
 
         self._init_lecun()   # inizializzazione pesi
@@ -113,8 +113,14 @@ test_loader =make_loader('test',shuffle=False)
 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model=CNN_ChannelAttention().to(device)
 criterion=nn.CrossEntropyLoss()
-optimizer=optim.Adam(model.parameters(),lr=1e-3,weight_decay=1e-3)
-
+base_lr = 0.05                       # LR di picco per batch 64
+optimizer = optim.SGD(
+    model.parameters(),
+    lr=base_lr,
+    momentum=0.9,                    # momentum classico
+    nesterov=True,
+    weight_decay=1e-4                # L2 decoupled
+)
 for ep in range(1,21):
     model.train(); corr=tot=tloss=0.0
     for x,y,_ in tqdm(train_loader,desc=f"Epoch {ep}"):
