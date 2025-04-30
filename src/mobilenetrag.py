@@ -165,7 +165,7 @@ def build_faiss_index(model,dl,k_norm=True):
                 e=e/np.linalg.norm(e,axis=1,keepdims=True)
             embs.append(e); lbs.append(y.numpy())
     embs=np.vstack(embs).astype('float32')
-    lbs =np.concatenate(lbs).
+    lbs =np.concatenate(lbs)
     dim=embs.shape[1]
     index=faiss.IndexFlatIP(dim)
     index.add(embs)
