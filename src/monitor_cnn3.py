@@ -29,7 +29,9 @@ class CNN_ChannelAttention(nn.Module):
             nn.SELU(), nn.AlphaDropout(drop_p_conv[2]), nn.MaxPool2d(2),
 
             nn.Conv2d(128, 256, 3, padding=1),
-            nn.SELU(), nn.AlphaDropout(drop_p_conv[3])           # niente MaxPool(1)
+            nn.SELU(), nn.AlphaDropout(drop_p_conv[3]),           
+
+            nn.AdaptiveAvgPool2d(1) 
         )
 
         # channel-attention (SE-style)
