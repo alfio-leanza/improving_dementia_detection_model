@@ -12,20 +12,17 @@ from sklearn.metrics import (confusion_matrix, accuracy_score, precision_score,
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.special import softmax
-# NEW: FAISS per indicizzazione ANN
-import faiss
+from sklearn.neighbors import NearestNeighbors   # ANN index senza FAISS
 
 """
 MobileNetV2 + Retrieval‑Augmented Classification (deep k‑NN)
-per classificazione "predizione‑corretta" su CWT EEG (2 classi)
 ───────────────────────────────────────────────────────────────────────────────
-• Data‑augmentation sul solo training set (time‑shift, rumore, channel‑dropout)
+• Data‑augmentation sul training set (time‑shift, rumore, channel‑dropout)
 • Class balancing (pesi inversi alla frequenza)
 • Label smoothing 0.1
-• Scheduler ReduceLROnPlateau (val loss) + Early‑Stopping (patience 5)
-• Retrieval ANN su embedding MobileNet (Indice FAISS FlatIP, k‑vote)
-• **Salvataggio**: training_history.png, confusion_matrix.png / .csv,
-                  classification_report.txt, metrics_summary.csv
+• Scheduler ReduceLROnPlateau + Early‑Stopping
+• ANN index con scikit‑learn NearestNeighbors (metric='cosine')
+• Output: png/csv/txt nella cartella results_mobilenetv2_rac
 """
 
 # ======================================================
@@ -100,24 +97,21 @@ class MobileNet19(nn.Module):
     def __init__(self,drop=0.5):
         super().__init__()
         m=models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+        # patch primo conv: da 3→19 canali
         m.features[0][0]=nn.Conv2d(19,32,kernel_size=3,stride=2,padding=1,bias=False)
         in_f=m.classifier[1].in_features
         m.classifier=nn.Sequential(nn.Dropout(drop),nn.Linear(in_f,2))
         self.net=m
-        # L'avgpool di mobilenet_v2 è AdaptiveAvgPool2d((1,1)) dentro self.net.avgpool
         self.avgpool=nn.AdaptiveAvgPool2d((1,1))
 
     def extract_features(self,x):
-        """Ottiene l'embedding 1×1280 prima della classifier."""
         x=self.net.features(x)
         x=self.avgpool(x)
-        x=torch.flatten(x,1)
-        return x
+        return torch.flatten(x,1)   # (B,1280)
 
-    def forward(self,x,return_emb=False):
+    def forward(self,x):
         emb=self.extract_features(x)
-        logits=self.net.classifier(emb)
-        return (logits,emb) if return_emb else logits
+        return self.net.classifier(emb)
 
 # ======================================================
 # 6. Early‑Stopping helper
@@ -144,18 +138,18 @@ def evaluate(model,dl,loss_fn):
     with torch.no_grad():
         for x,y in dl:
             x,y=x.to(device),y.to(device)
-            out=model(x)              # logits
-            loss=loss_fn(out,y)
-            _,p=out.max(1); tot+=y.size(0); corr+=p.eq(y).sum().item()
+            logits=model(x)
+            loss=loss_fn(logits,y)
+            _,p=logits.max(1); tot+=y.size(0); corr+=p.eq(y).sum().item()
             lsum+=loss.item(); preds+=p.cpu().tolist(); labels+=y.cpu().tolist()
     return lsum/len(dl),100.*corr/tot,labels,preds
 
 # ======================================================
-# 8. Retrieval‑Augmented helpers (build index & k‑vote)
+# 8. Retrieval‑Augmented helpers
 # ======================================================
 
-def build_faiss_index(model,dl,k_norm=True):
-    """Costruisce indice FAISS FlatIP sugli embedding del loader."""
+def build_ann_index(model,dl,k_norm=True):
+    """Crea indice NearestNeighbors (cosine)."""
     model.eval(); embs=[]; lbs=[]
     with torch.no_grad():
         for x,y in tqdm(dl,desc='Indexing'):
@@ -163,32 +157,15 @@ def build_faiss_index(model,dl,k_norm=True):
             e=model.extract_features(x).cpu().numpy()
             if k_norm:
                 e=e/np.linalg.norm(e,axis=1,keepdims=True)
-            embs.append(e); lbs.append(y.numpy())
-    embs=np.vstack(embs).astype('float32')
-    lbs =np.concatenate(lbs)
-    dim=embs.shape[1]
-    index=faiss.IndexFlatIP(dim)
-    index.add(embs)
-    return index,lbs
-
-
-def knn_predict(model,index,train_labels,dl,k=5,k_norm=True):
-    model.eval(); preds=[]; labels=[]
-    with torch.no_grad():
-        for x,y in tqdm(dl,desc='k‑NN infer'):
-            x=x.to(device)
-            e=model.extract_features(x).cpu().numpy()
-            if k_norm:
-                e=e/np.linalg.norm(e,axis=1,keepdims=True)
-            D,I=index.search(e,k)
-            for neigh in I:
+            distances,indices=nn_index.kneighbors(e,n_neighbors=k,return_distance=True)
+            for neigh in indices:
                 votes=train_labels[neigh]
                 preds.append(np.bincount(votes).argmax())
             labels+=y.numpy().tolist()
     return labels,preds
 
 # ======================================================
-# 9. Funzione di training (rimasta invariata)
+# 9. Funzione di training
 # ======================================================
 
 def train(model,train_dl,val_dl,loss_fn,opt,sched,epochs=50):
@@ -198,8 +175,8 @@ def train(model,train_dl,val_dl,loss_fn,opt,sched,epochs=50):
         model.train(); tot=0; corr=0; lsum=0
         for x,y in tqdm(train_dl,desc=f'Epoch {ep+1}'):
             x,y=x.to(device),y.to(device)
-            opt.zero_grad(); out=model(x); loss=loss_fn(out,y); loss.backward(); opt.step()
-            _,p=out.max(1); tot+=y.size(0); corr+=p.eq(y).sum().item(); lsum+=loss.item()
+            opt.zero_grad(); logits=model(x); loss=loss_fn(logits,y); loss.backward(); opt.step()
+            _,p=logits.max(1); tot+=y.size(0); corr+=p.eq(y).sum().item(); lsum+=loss.item()
         tr_loss, tr_acc = lsum/len(train_dl),100.*corr/tot
         val_loss,val_acc,_,_=evaluate(model,val_dl,loss_fn)
         sched.step(val_loss)
@@ -212,35 +189,37 @@ def train(model,train_dl,val_dl,loss_fn,opt,sched,epochs=50):
     return hist
 
 # ======================================================
-# 10. Salvataggio risultati (esteso con modalita k‑NN)
+# 10. Salvataggio risultati
 # ======================================================
 
 def save_outputs(hist,metrics,knn_metrics=None,outdir='/home/alfio/improving_dementia_detection_model/results_mobilenetv2_rac'):
     os.makedirs(outdir,exist_ok=True)
     # history plot
     plt.figure(figsize=(12,5))
-    plt.subplot(1,2,1); plt.plot(hist['train_loss'],'-o'); plt.plot(hist['val_loss'],'-o'); plt.legend(['Train','Val']); plt.title('Loss');
-    plt.subplot(1,2,2); plt.plot(hist['train_acc'],'-o'); plt.plot(hist['val_acc'],'-o'); plt.legend(['Train','Val']); plt.title('Accuracy');
+    plt.subplot(1,2,1)
+    plt.plot(hist['train_loss'],'-o'); plt.plot(hist['val_loss'],'-o'); plt.legend(['Train','Val']); plt.title('Loss')
+    plt.subplot(1,2,2)
+    plt.plot(hist['train_acc'],'-o'); plt.plot(hist['val_acc'],'-o'); plt.legend(['Train','Val']); plt.title('Accuracy')
     plt.tight_layout(); plt.savefig(os.path.join(outdir,'training_history.png')); plt.close()
-    # confusion matrix log‑reg
-    cm=metrics['conf_matrix'];
-    sns.heatmap(cm,annot=True,fmt='d',cmap='Blues',xticklabels=['Pred0','Pred1'],yticklabels=['True0','True1'])
-    plt.title('Confusion Matrix (Softmax head)'); plt.savefig(os.path.join(outdir,'confusion_matrix_softmax.png')); plt.close()
-    pd.DataFrame(cm).to_csv(os.path.join(outdir,'confusion_matrix_softmax.csv'),index=False)
-    # classification report
+
+    def _save_cm(cm,tag):
+        sns.heatmap(cm,annot=True,fmt='d',cmap='Blues',xticklabels=['Pred0','Pred1'],yticklabels=['True0','True1'])
+        plt.title(f'Confusion Matrix ({tag})'); plt.savefig(os.path.join(outdir,f'confusion_matrix_{tag}.png')); plt.close()
+        pd.DataFrame(cm).to_csv(os.path.join(outdir,f'confusion_matrix_{tag}.csv'),index=False)
+
+    # softmax metrics
+    _save_cm(metrics['conf_matrix'],'softmax')
     with open(os.path.join(outdir,'classification_report_softmax.txt'),'w') as f:
         f.write(metrics['report'])
-    # summary csv
-    summary=[{'mode':'softmax',**{k:v for k,v in metrics.items() if k in ['accuracy','precision','recall','f1']}}]
-    # --- kNN branch
+    summary=[{'mode':'softmax','accuracy':metrics['accuracy'],'precision':metrics['precision'],'recall':metrics['recall'],'f1':metrics['f1']}]
+
+    # k‑NN metrics (optional)
     if knn_metrics is not None:
-        cm_k=knn_metrics['conf_matrix'];
-        sns.heatmap(cm_k,annot=True,fmt='d',cmap='Greens',xticklabels=['Pred0','Pred1'],yticklabels=['True0','True1'])
-        plt.title('Confusion Matrix (k‑NN)'); plt.savefig(os.path.join(outdir,'confusion_matrix_knn.png')); plt.close()
-        pd.DataFrame(cm_k).to_csv(os.path.join(outdir,'confusion_matrix_knn.csv'),index=False)
+        _save_cm(knn_metrics['conf_matrix'],'knn')
         with open(os.path.join(outdir,'classification_report_knn.txt'),'w') as f:
             f.write(knn_metrics['report'])
-        summary.append({'mode':'knn',**{k:v for k,v in knn_metrics.items() if k in ['accuracy','precision','recall','f1']}})
+        summary.append({'mode':'knn','accuracy':knn_metrics['accuracy'],'precision':knn_metrics['precision'],'recall':knn_metrics['recall'],'f1':knn_metrics['f1']})
+
     pd.DataFrame(summary).to_csv(os.path.join(outdir,'metrics_summary.csv'),index=False)
 
 # ======================================================
@@ -248,23 +227,28 @@ def save_outputs(hist,metrics,knn_metrics=None,outdir='/home/alfio/improving_dem
 # ======================================================
 if __name__=='__main__':
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # dataloader
+    print('Device:',device)
+    # DataLoader
     train_dl=loader('train',batch=32,augment=True)
     val_dl  =loader('val'  ,batch=32,augment=False)
     test_dl =loader('test' ,batch=32,augment=False)
-    # class weights
+
+    # class weights (bilanciamento)
     counts=np.bincount([y for _,y in train_dl.dataset])
     w=torch.tensor(1.0/counts,dtype=torch.float32)
-    # model and optimizer
+
+    # model & optimizer
     model=MobileNet19(drop=0.5).to(device)
     loss_fn=nn.CrossEntropyLoss(weight=w.to(device),label_smoothing=0.1)
     opt=optim.AdamW(model.parameters(),lr=1e-3,weight_decay=1e-3)
     sched=optim.lr_scheduler.ReduceLROnPlateau(opt,mode='min',factor=0.5,patience=2)
-    # train
+
+    # training
     history=train(model,train_dl,val_dl,loss_fn,opt,sched,epochs=50)
+
     # test (softmax head)
-    test_loss,test_acc,test_lbls,test_preds=evaluate(model,test_dl,loss_fn)
-    metrics_softmax={
+    _,test_acc,test_lbls,test_preds=evaluate(model,test_dl,loss_fn)
+    soft_metrics={
         'accuracy':test_acc,
         'precision':precision_score(test_lbls,test_preds),
         'recall':recall_score(test_lbls,test_preds),
@@ -272,26 +256,21 @@ if __name__=='__main__':
         'conf_matrix':confusion_matrix(test_lbls,test_preds),
         'report':classification_report(test_lbls,test_preds,target_names=['Class0','Class1'])
     }
-    print(f"[Softmax] Test Acc {test_acc:.2f}% | P {metrics_softmax['precision']:.2f} R {metrics_softmax['recall']:.2f} F1 {metrics_softmax['f1']:.2f}")
+    print(f"[Softmax] Test Acc {test_acc:.2f}% | P {soft_metrics['precision']:.2f} R {soft_metrics['recall']:.2f} F1 {soft_metrics['f1']:.2f}")
 
-    # ==================================================
-    # k‑NN Retrieval‑Augmented branch
-    # ==================================================
-    # usiamo gli stessi dati della split train ma SENZA augmentation per l'indice
+    # k‑NN branch
     train_noaug_dl=loader('train',batch=64,augment=False)
-    index,train_labels_np=build_faiss_index(model,train_noaug_dl)
-
-    test_lbls_knn,test_preds_knn=knn_predict(model,index,train_labels_np,test_dl,k=5)
-    acc_knn=accuracy_score(test_lbls_knn,test_preds_knn)
+    nn_index,train_labels_np=build_ann_index(model,train_noaug_dl)
+    test_lbls_knn,test_preds_knn=knn_predict(model,nn_index,train_labels_np,test_dl,k=5)
     knn_metrics={
-        'accuracy':acc_knn,
+        'accuracy':accuracy_score(test_lbls_knn,test_preds_knn),
         'precision':precision_score(test_lbls_knn,test_preds_knn),
         'recall':recall_score(test_lbls_knn,test_preds_knn),
         'f1':f1_score(test_lbls_knn,test_preds_knn),
         'conf_matrix':confusion_matrix(test_lbls_knn,test_preds_knn),
         'report':classification_report(test_lbls_knn,test_preds_knn,target_names=['Class0','Class1'])
     }
-    print(f"[k‑NN]    Test Acc {acc_knn:.2f}% | P {knn_metrics['precision']:.2f} R {knn_metrics['recall']:.2f} F1 {knn_metrics['f1']:.2f}")
+    print(f"[k‑NN]    Test Acc {knn_metrics['accuracy']:.2f}% | P {knn_metrics['precision']:.2f} R {knn_metrics['recall']:.2f} F1 {knn_metrics['f1']:.2f}")
 
-    # save outputs
-    save_outputs(history,metrics_softmax,knn_metrics)
+    # salvataggio
+    save_outputs(history,soft_metrics,knn_metrics)
