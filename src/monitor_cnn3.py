@@ -49,12 +49,18 @@ class CNN_ChannelAttention(nn.Module):
 
     # ----------------------------------------------------
     def _init_lecun(self):
-        """LeCun normal per Conv2d / Linear, bias = 0."""
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
-                nn.init.lecun_normal_(m.weight)
+                if hasattr(nn.init, "lecun_normal_"):
+                    nn.init.lecun_normal_(m.weight)
+                else:                                  # fallback
+                    fan_in, _ = nn.init._calculate_fan_in_and_fan_out(m.weight)
+                    std = (1.0 / fan_in) ** 0.5
+                    with torch.no_grad():
+                        m.weight.normal_(0.0, std)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
+
 
     # ----------------------------------------------------
     def forward(self, x):
