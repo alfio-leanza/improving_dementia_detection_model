@@ -6,70 +6,20 @@ import matplotlib.pyplot as plt, seaborn as sns
 from tqdm import tqdm
 
 # ========= CNN Channel Attention (unchanged) ==========
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 class CNN_ChannelAttention(nn.Module):
-    """CNN + channel-wise attention in stile Squeeze-and-Excitation,
-       configurata come Self-Normalizing Network (SELU + AlphaDropout)."""
-
-    def __init__(self, num_channels: int = 19, num_classes: int = 2,
-                 drop_p_conv=(0.2, 0.2, 0.3, 0.3), drop_p_fc=0.4):
+    def __init__(self, num_channels=19, num_classes=2):
         super().__init__()
-
         self.conv_block = nn.Sequential(
-            nn.Conv2d(num_channels, 32, 3, padding=1),
-            nn.SELU(), nn.AlphaDropout(drop_p_conv[0]), nn.MaxPool2d(2),
-
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.SELU(), nn.AlphaDropout(drop_p_conv[1]), nn.MaxPool2d(2),
-
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.SELU(), nn.AlphaDropout(drop_p_conv[2]), nn.MaxPool2d(2),
-
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.SELU(), nn.AlphaDropout(drop_p_conv[3]),           
-
-            nn.AdaptiveAvgPool2d(1) 
-        )
-
-        # channel-attention (SE-style)
-        self.channel_attention = nn.Sequential(
-            nn.Linear(128, 64, bias=False),
-            nn.SELU(),
-            nn.Linear(64, 128, bias=False),
-            nn.Sigmoid()
-        )
-
-        self.classifier = nn.Sequential(
-            nn.AlphaDropout(drop_p_fc),
-            nn.Linear(128, num_classes)
-        )
-
-        self._init_lecun()   # inizializzazione pesi
-
-    # ----------------------------------------------------
-    def _init_lecun(self):
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
-                if hasattr(nn.init, "lecun_normal_"):
-                    nn.init.lecun_normal_(m.weight)
-                else:                                  # fallback
-                    fan_in, _ = nn.init._calculate_fan_in_and_fan_out(m.weight)
-                    std = (1.0 / fan_in) ** 0.5
-                    with torch.no_grad():
-                        m.weight.normal_(0.0, std)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-
-
-    # ----------------------------------------------------
-    def forward(self, x):
-        x = self.conv_block(x).flatten(1)        # (B, 256)
-        x = x * self.channel_attention(x)        # re-scale per canale
+            nn.Conv2d(num_channels, 32, 3, padding=1, bias=False), nn.BatchNorm2d(32), nn.ReLU(), nn.Dropout2d(0.2), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1, bias=False), nn.BatchNorm2d(64), nn.ReLU(), nn.Dropout2d(0.2), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1, bias=False), nn.BatchNorm2d(128), nn.ReLU(), nn.Dropout2d(0.3), nn.MaxPool2d(2),
+            nn.Conv2d(128, 256, 3, padding=1, bias=False), nn.BatchNorm2d(256), nn.ReLU(), nn.Dropout2d(0.3), nn.AdaptiveAvgPool2d(1))
+        self.channel_attention = nn.Sequential(nn.Linear(256,64,bias=False), nn.ReLU(), nn.Linear(64,256,bias=False), nn.Sigmoid())
+        self.classifier = nn.Sequential(nn.Dropout(0.6), nn.Linear(256,num_classes))
+    def forward(self,x):
+        x = self.conv_block(x).flatten(1)
+        x = x * self.channel_attention(x)
         return self.classifier(x)
-
 
 # ========= Data loading (identico) ==========
 train_act = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy',allow_pickle=True).item()
@@ -113,14 +63,8 @@ test_loader =make_loader('test',shuffle=False)
 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model=CNN_ChannelAttention().to(device)
 criterion=nn.CrossEntropyLoss()
-base_lr = 0.05                       # LR di picco per batch 64
-optimizer = optim.SGD(
-    model.parameters(),
-    lr=base_lr,
-    momentum=0.9,                    # momentum classico
-    nesterov=True,
-    weight_decay=1e-4                # L2 decoupled
-)
+optimizer=optim.AdamW(model.parameters(),lr=1e-3,weight_decay=1e-3)
+
 for ep in range(1,21):
     model.train(); corr=tot=tloss=0.0
     for x,y,_ in tqdm(train_loader,desc=f"Epoch {ep}"):
