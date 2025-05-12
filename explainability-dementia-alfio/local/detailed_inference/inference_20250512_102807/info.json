@@ -1,0 +1,6 @@
+{
+    "checkpoint_timestamp": "train_20250510_172519/best_test_acc.pt",
+    "dataset_name": "miltiadous_deriv_uV_d1.0s_o0.0s",
+    "classes": "hc-ftd-ad",
+    "model": "GNNCWT2D_Mk11_1sec"
+}
