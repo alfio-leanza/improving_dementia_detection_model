@@ -31,19 +31,19 @@ class CNN_ChannelAttention(nn.Module):
             nn.ReLU(),
             nn.Dropout2d(0.3),
             nn.MaxPool2d(2),
-            nn.Conv2d(128, 256, 3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(128, 128, 3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.Dropout2d(0.3),
             nn.AdaptiveAvgPool2d(1),
         )
         self.channel_attention = nn.Sequential(
-            nn.Linear(256, 64, bias=False),
+            nn.Linear(128, 64, bias=False),
             nn.ReLU(),
-            nn.Linear(64, 256, bias=False),
+            nn.Linear(64, 128, bias=False),
             nn.Sigmoid(),
         )
-        self.classifier = nn.Sequential(nn.Dropout(0.6), nn.Linear(256, num_classes))
+        self.classifier = nn.Sequential(nn.Dropout(0.5), nn.Linear(128, num_classes))
 
     def forward(self, x):
         x = self.conv_block(x).flatten(1)
@@ -228,7 +228,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = CNN_ChannelAttention().to(device)
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-3)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 
 # directory dove mettere i checkpoint
 ckpt_dir = "/home/alfio/improving_dementia_detection_model/checkpoints_cnn"
