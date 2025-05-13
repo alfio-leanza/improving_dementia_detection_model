@@ -196,7 +196,7 @@ for ep in range(1, 81):
         x, y = x.to(device), y.to(device)
 
         optimizer.zero_grad()
-        with autocast():
+        with autocast(device_type='cuda'):
             out = model(x)
             loss = criterion(out, y)
         scaler.scale(loss).backward()
@@ -213,7 +213,7 @@ for ep in range(1, 81):
     with torch.no_grad():
         for x, y, _ in val_loader:
             x, y = x.to(device), y.to(device)
-            with autocast():
+            with autocast(device_type='cuda'):
                 logits = model(x)
             vcorr += logits.argmax(1).eq(y).sum().item()
             vtot += y.size(0)
@@ -273,7 +273,7 @@ def collect(loader, split):
     rows = []
     with torch.no_grad():
         for x, y, fns in loader:
-            with autocast():
+            with autocast(device_type='cuda'):
                 logits = final_model(x.to(device)).cpu()
             sm = sf(logits, axis=1)
             preds = logits.argmax(1)
@@ -304,7 +304,7 @@ yt, yp = [], []
 with torch.no_grad():
     for x, y, _ in test_loader:
         yt.extend(y.numpy())
-        with autocast():
+        with autocast(device_type='cuda'):
             yp.extend(final_model(x.to(device)).argmax(1).cpu().numpy())
 
 cm = confusion_matrix(yt, yp)
