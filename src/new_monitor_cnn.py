@@ -57,7 +57,7 @@ class CNN_ChannelAttention(nn.Module):
             nn.Linear(64, 512, bias=False),
             nn.Sigmoid(),
         )
-        self.classifier = nn.Sequential(nn.Dropout(0.6), nn.Linear(64, num_classes))
+        self.classifier = nn.Sequential(nn.Dropout(0.6), nn.Linear(512, num_classes))
 
     def forward(self, x):
         x = self.conv_block(x).flatten(1)
