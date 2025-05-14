@@ -46,7 +46,7 @@ class CNN_ChannelAttention(nn.Module):
             nn.ReLU(),
             nn.Dropout2d(0.4),
             nn.Conv2d(256, 512, 3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+            nn.BatchNorm2d(512),
             nn.ReLU(),
             nn.Dropout2d(0.4),
             nn.AdaptiveAvgPool2d(1),
