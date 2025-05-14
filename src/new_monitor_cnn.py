@@ -45,15 +45,19 @@ class CNN_ChannelAttention(nn.Module):
             nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.Dropout2d(0.4),
+            nn.Conv2d(256, 512, 3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.Dropout2d(0.4),
             nn.AdaptiveAvgPool2d(1),
         )
         self.channel_attention = nn.Sequential(
-            nn.Linear(256, 64, bias=False),
+            nn.Linear(512, 128, bias=False),
             nn.ReLU(),
-            nn.Linear(64, 256, bias=False),
+            nn.Linear(128, 512, bias=False),
             nn.Sigmoid(),
         )
-        self.classifier = nn.Sequential(nn.Dropout(0.6), nn.Linear(256, num_classes))
+        self.classifier = nn.Sequential(nn.Dropout(0.6), nn.Linear(128, num_classes))
 
     def forward(self, x):
         x = self.conv_block(x).flatten(1)
