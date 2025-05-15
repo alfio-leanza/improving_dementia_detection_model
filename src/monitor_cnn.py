@@ -4,6 +4,11 @@ from sklearn.metrics import classification_report, confusion_matrix
 from scipy.special import softmax as sf
 import matplotlib.pyplot as plt, seaborn as sns
 from tqdm import tqdm
+import random
+
+SEED = 42
+random.seed(SEED); np.random.seed(SEED)
+torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
 
 # ========= CNN Channel Attention (unchanged) ==========
 class CNN_ChannelAttention(nn.Module):
@@ -55,7 +60,7 @@ def make_loader(split,batch=64,augment=False,shuffle=True):
     subset=true_pred[true_pred['original_rec'].isin([f'sub-{s:03d}'for s in splits[split]])]
     return DataLoader(CWT_Dataset(subset,augment),batch_size=batch,shuffle=shuffle,num_workers=4)
 
-train_loader=make_loader('train',augment=True)
+train_loader=make_loader('train',augment=True, shuffle = False)
 val_loader  =make_loader('val',shuffle=False)
 test_loader =make_loader('test',shuffle=False)
 
