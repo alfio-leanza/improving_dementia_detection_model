@@ -26,23 +26,23 @@ class CNN_ChannelAttention(nn.Module):
         super().__init__()
         self.conv_block = nn.Sequential(
             nn.Conv2d(num_channels, 32, 3, padding=1, bias=False),
-            nn.BatchNorm2d(32), nn.ReLU(inplace=True), nn.Dropout2d(0.1), nn.MaxPool2d(2),
+            nn.BatchNorm2d(32), nn.ReLU(inplace=True), nn.Dropout2d(0.2), nn.MaxPool2d(2),
 
             nn.Conv2d(32, 64, 3, padding=1, bias=False),
-            nn.BatchNorm2d(64), nn.ReLU(inplace=True), nn.Dropout2d(0.1), nn.MaxPool2d(2),
+            nn.BatchNorm2d(64), nn.ReLU(inplace=True), nn.Dropout2d(0.2), nn.MaxPool2d(2),
 
             nn.Conv2d(64, 128, 3, padding=1, bias=False),
-            nn.BatchNorm2d(128), nn.ReLU(inplace=True), nn.Dropout2d(0.1), nn.MaxPool2d(2),
+            nn.BatchNorm2d(128), nn.ReLU(inplace=True), nn.Dropout2d(0.2), nn.MaxPool2d(2),
 
             nn.Conv2d(128, 256, 3, padding=1, bias=False),
-            nn.BatchNorm2d(256), nn.ReLU(inplace=True), nn.Dropout2d(0.1),
+            nn.BatchNorm2d(256), nn.ReLU(inplace=True), nn.Dropout2d(0.2),
             nn.AdaptiveAvgPool2d(1),
         )
         self.channel_attention = nn.Sequential(
             nn.Linear(256, 64, bias=False), nn.ReLU(inplace=True),
             nn.Linear(64, 256, bias=False), nn.Sigmoid()
         )
-        self.classifier = nn.Sequential(nn.Dropout(0.4), nn.Linear(256, num_classes))
+        self.classifier = nn.Sequential(nn.Dropout(0.5), nn.Linear(256, num_classes))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv_block(x).flatten(1)
@@ -114,7 +114,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model  = CNN_ChannelAttention().to(device)
 
 criterion = nn.CrossEntropyLoss()                            # classico
-optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=2e-2)
 
 num_epochs   = 80
 best_val_acc = 0.0
