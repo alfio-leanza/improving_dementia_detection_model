@@ -65,8 +65,8 @@ class CNN_ChannelAttention(nn.Module):
 grid = {
     "channels_block":[(16,32,64),(32,64,128)],
     "act_fn":[nn.ReLU, nn.SELU],
-    "dropout_block":[0.1,0.2],
-    "dropout_head":[0.4,0.5],
+    "dropout_block":[0.2,0.3],
+    "dropout_head":[0.5,0.6],
     "weight_decay":[1e-2,2e-2],
     "lr":[1e-3,2e-3],
 }

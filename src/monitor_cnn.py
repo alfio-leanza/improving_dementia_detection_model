@@ -6,10 +6,6 @@ import matplotlib.pyplot as plt, seaborn as sns
 from tqdm import tqdm
 import random
 
-SEED = 42
-random.seed(SEED); np.random.seed(SEED)
-torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
-
 # ========= CNN Channel Attention (unchanged) ==========
 class CNN_ChannelAttention(nn.Module):
     def __init__(self, num_channels=19, num_classes=2):
@@ -27,9 +23,9 @@ class CNN_ChannelAttention(nn.Module):
         return self.classifier(x)
 
 # ========= Data loading (identico) ==========
-train_act = np.load('/home/tom/dataset_eeg/inference_20250327_171717/train_activations.npy',allow_pickle=True).item()
-val_act   = np.load('/home/tom/dataset_eeg/inference_20250327_171717/val_activations.npy',  allow_pickle=True).item()
-test_act  = np.load('/home/tom/dataset_eeg/inference_20250327_171717/test_activations.npy', allow_pickle=True).item()
+train_act = np.load('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/detailed_inference/inference_20250512_102807/train_activations.npy',allow_pickle=True).item()
+val_act   = np.load('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/detailed_inference/inference_20250512_102807/val_activations.npy',  allow_pickle=True).item()
+test_act  = np.load('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/detailed_inference/inference_20250512_102807/test_activations.npy', allow_pickle=True).item()
 
 def build_df(d,split):
     df = pd.DataFrame({'crop_file':list(d.keys()),'valore':list(d.values())}); df['dataset']=split
