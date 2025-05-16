@@ -56,14 +56,15 @@ def make_loader(split,batch=64,augment=False,shuffle=True):
     subset=true_pred[true_pred['original_rec'].isin([f'sub-{s:03d}'for s in splits[split]])]
     return DataLoader(CWT_Dataset(subset,augment),batch_size=batch,shuffle=shuffle,num_workers=4)
 
-train_loader=make_loader('train',augment=True, shuffle = False)
+train_loader=make_loader('train',augment=True, shuffle = True)
 val_loader  =make_loader('val',shuffle=False)
 test_loader =make_loader('test',shuffle=False)
 
 # ========= Training ==========
 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model=CNN_ChannelAttention().to(device)
-criterion=nn.CrossEntropyLoss()
+weights = torch.tensor([1.3, 1.0]).to(device)   # Bad, Good new line
+criterion = nn.CrossEntropyLoss(weight=weights)
 optimizer=optim.Adam(model.parameters(),lr=1e-3,weight_decay=1e-3)
 
 for ep in range(1,21):
@@ -78,7 +79,7 @@ for ep in range(1,21):
     print(f"Epoch {ep}: train_acc={corr/tot:.4f} val_acc={vcorr/vtot:.4f}")
 
 # ========= Collect & save ==========
-out_dir='/home/alfio/improving_dementia_detection_model/results_cnn'; os.makedirs(out_dir,exist_ok=True)
+out_dir='/home/alfio/improving_dementia_detection_model/results_cnn_weighted'; os.makedirs(out_dir,exist_ok=True)
 
 def collect(loader,split):
     model.eval(); rows=[]
