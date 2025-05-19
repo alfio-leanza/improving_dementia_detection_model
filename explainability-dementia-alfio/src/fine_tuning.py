@@ -8,7 +8,6 @@ from tqdm import tqdm
 # ---------------- percorsi ----------------
 DATASET_ROOT   = "/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s"
 CROP_DIR       = os.path.join(DATASET_ROOT, "cwt")      # cartella .npy
-GRAPH_DIR      = "local/graphs"                         # grafi .pt usati dalla GNN
 MONITOR_CSV    = "/home/alfio/improving_dementia_detection_model/results_cnn/train_predictions_detailed.csv"
 PRETRAINED_GNN = "/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/checkpoints/train_20250510_172519/best_test_acc.pt"
 OUT_DIR        = "/home/alfio/improving_dementia_detection_model/finetune_gnn_monitor"
@@ -45,8 +44,8 @@ train_df = train_df.merge(goodness_df, on="crop_file", how="left")
 train_df["sample_weight"] = 1.0 - train_df["goodness"]
 
 # validation & test
-val_df["sample_weight"]   = 1.0
-test_df["sample_weight"]  = 1.0
+val_df.loc[:, "sample_weight"] = 1.0
+test_df.loc[:, "sample_weight"] = 1.0
 
 # ---------- Dataset adattato per grafi ----------
 class GraphDatasetWithWeight(CWTGraphDataset):
@@ -56,6 +55,9 @@ class GraphDatasetWithWeight(CWTGraphDataset):
         data = super().get(idx)
         data.w = torch.tensor([self.annot_df.iloc[idx]["sample_weight"]],
                               dtype=torch.float32)
+        
+        data.crop_file = self.annot_df.iloc[idx]["crop_file"]
+
         return data
 
 train_set = GraphDatasetWithWeight(train_df, CROP_DIR)
@@ -76,9 +78,9 @@ print("Pesi pre-addestrati caricati.")
 
 # ---------- training setup ----------
 crit = nn.CrossEntropyLoss(reduction="none")
-opt  = optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
+opt  = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
 sched= optim.lr_scheduler.CosineAnnealingLR(opt, T_max=10, eta_min=1e-5)
-EPOCHS, PATIENCE = 10, 5
+EPOCHS, PATIENCE = 20, 10
 best_val, patience, best_state = 0., 0, None
 
 for ep in range(1, EPOCHS+1):
