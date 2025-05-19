@@ -76,6 +76,12 @@ model.load_state_dict(state["model_state_dict"]
                       if "model_state_dict" in state else state)
 print("Pesi pre-addestrati caricati.")
 
+for m in model.modules():
+    if isinstance(m, nn.Dropout2d):
+        m.p = 0.3   # per i dropout2d nei tuoi GConv
+    elif isinstance(m, nn.Dropout):
+        m.p = 0.5   # per il Dropout nel classifier
+
 # ---------- training setup ----------
 crit = nn.CrossEntropyLoss(reduction="none")
 opt  = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
