@@ -37,11 +37,16 @@ val_df   = annot[annot["original_rec"].isin(val_subj)]
 test_df  = annot[annot["original_rec"].isin(test_subj)]
 
 # ---------- unione goodness e peso ------------
+# ---------- 1) Unione goodness SOLO su train ----------
 goodness_df = pd.read_csv(MONITOR_CSV)[["crop_file","goodness"]]
-for df in (train_df,val_df,test_df):
-    df.merge(goodness_df, on="crop_file", how="left", inplace=True)
-    df["sample_weight"] = 1.0 - df["goodness"]
-    df["sample_weight"].fillna(1.0, inplace=True)
+
+# train
+train_df = train_df.merge(goodness_df, on="crop_file", how="left")
+train_df["sample_weight"] = 1.0 - train_df["goodness"]
+
+# validation & test
+val_df["sample_weight"]   = 1.0
+test_df["sample_weight"]  = 1.0
 
 # ---------- Dataset adattato per grafi ----------
 class GraphDatasetWithWeight(CWTGraphDataset):
