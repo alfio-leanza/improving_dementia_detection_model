@@ -1,7 +1,6 @@
 """
 Multi-task head per la GNNCWT2D_Mk11_1sec.
-Non richiede modifiche ai sorgenti originali: li importa e li
-ri-usa “as-is”.
+Non richiede modifiche ai sorgenti originali: li importa e ri-usa “as-is”.
 """
 import torch
 import torch.nn as nn
@@ -43,20 +42,27 @@ class MultiTaskGNNCWT2D_Mk11_1sec(nn.Module):
     @classmethod
     def from_pretrained(cls, ckpt_path: str, device: str = "cpu"):
         """
-        Carica i pesi di un checkpoint .pt salvato da single_fold.py
-        (la vecchia GNN a 3 classi) dentro il nuovo modello multi-task.
+        Carica i pesi di un checkpoint .pt (contenente *model_state_dict*)
+        della vecchia GNN a 3 classi e li trasferisce nel modello multi-task.
         """
-        # 1) modello “vecchio” per leggere lo state-dict
-        old = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes=3)
-        old.load_state_dict(torch.load(ckpt_path, map_location=device))
+        # 1) carica il file .pt: può essere già uno state-dict oppure un wrapper
+        ckpt = torch.load(ckpt_path, map_location=device)
+        if 'model_state_dict' in ckpt:           # caso wrapper di single_fold.py
+            ckpt = ckpt['model_state_dict']
 
-        # 2) modello nuovo
+        # 2) inizializza modello “vecchio” per leggere i pesi
+        old = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes=3)
+        # ignoriamo chiavi extra/mancanti (strict=False)
+        old.load_state_dict(ckpt, strict=False)
+
+        # 3) costruisce il nuovo modello multi-task
         new = cls().to(device)
         sd_new = new.state_dict()
         for k, v in old.state_dict().items():
-            if k.startswith('lin6'):       # saltiamo la head a 3 classi
+            if k.startswith('lin6'):        # salta la testa a 3 classi
                 continue
             if k in sd_new and v.shape == sd_new[k].shape:
                 sd_new[k] = v
-        new.load_state_dict(sd_new)
+        # carichiamo nel nuovo modello (strict=False per eventuali teste)
+        new.load_state_dict(sd_new, strict=False)
         return new
