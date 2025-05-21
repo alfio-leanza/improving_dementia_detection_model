@@ -149,11 +149,17 @@ def main():
     test_ds  = MultiTaskCWTGraphDataset(df_test,  crop_path, csv_test)
 
     train_dl = DataLoader(train_ds, batch_size=args.batch_size,
-                          shuffle=True,  num_workers=args.num_workers, pin_memory=True)
+                        shuffle=True,  num_workers=args.num_workers,
+                        pin_memory=False)
+
     val_dl   = DataLoader(val_ds,   batch_size=args.batch_size,
-                          shuffle=False, num_workers=args.num_workers, pin_memory=True)
+                        shuffle=False, num_workers=args.num_workers,
+                        pin_memory=False)
+
     test_dl  = DataLoader(test_ds,  batch_size=args.batch_size,
-                          shuffle=False, num_workers=args.num_workers, pin_memory=True)
+                        shuffle=False, num_workers=args.num_workers,
+                        pin_memory=False)
+
 
     # ----------- modello & ottimizzatore ----------------------------
     model = MultiTaskGNNCWT2D_Mk11_1sec.from_pretrained(args.pretrained_ckpt, device)
