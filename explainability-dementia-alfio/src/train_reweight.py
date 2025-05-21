@@ -128,7 +128,7 @@ def main():
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     # ---------- training -------------------------------------------------
-    writer = SummaryWriter(f'local/runs/reweight_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+    writer = SummaryWriter(f'local/runs/reweight_{datetime.now().strftime("%Y%m%d_%H%M%S")}_invert')
     best_val = 0.
     for ep in range(args.num_epochs):
         print(f'\n===== Epoch {ep:02d} =====')
@@ -144,11 +144,11 @@ def main():
 
         if vl_acc > best_val:
             best_val = vl_acc
-            torch.save(model.state_dict(), 'best_reweight.pt')
+            torch.save(model.state_dict(), 'best_reweight_invert.pt')
             print('>>> New best model saved.')
 
     # ---------- test finale ---------------------------------------------
-    model.load_state_dict(torch.load('best_reweight.pt', map_location=device))
+    model.load_state_dict(torch.load('best_reweight_invert.pt', map_location=device))
     _, ts_acc = eval_epoch(model, test_dl, device, args.alpha, args.invert)
     print(f'\n>>> Test accuracy (best model): {ts_acc:.4f}')
 

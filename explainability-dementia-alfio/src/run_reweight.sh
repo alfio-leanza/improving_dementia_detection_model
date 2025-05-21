@@ -14,12 +14,12 @@ CKPT_GNN="/home/alfio/improving_dementia_detection_model/explainability-dementia
 
 # 4) Parametri Re-weighting
 ALPHA=0.3          # (ignora se usi --invert nello script python)
-INVERT=false       # true  => w_i = 1 - goodness
+INVERT=true       # true  => w_i = 1 - goodness
                    # false => w_i = α + (1-α)*goodness
 
 # 5) Cartella output
 STAMP=$(date +%Y%m%d_%H%M%S)
-OUT_ROOT="/home/alfio/improving_dementia_detection_model/results_reweight"
+OUT_ROOT="/home/alfio/improving_dementia_detection_model/results_reweight_invert"
 OUT_DIR="${OUT_ROOT}/${STAMP}"
 mkdir -p "${OUT_DIR}"
 
@@ -37,7 +37,7 @@ python3 train_reweight.py \
   --batch_size 64 \
   --seed 1234
 
-BEST_CKPT="best_reweight.pt"   # salvato dallo script python
+BEST_CKPT="best_reweight_invert.pt"   # salvato dallo script python
 echo ">>> Best checkpoint: ${BEST_CKPT}"
 
 # Esporta variabili d’ambiente per il blocco Python
