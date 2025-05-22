@@ -17,7 +17,7 @@ OUT_DIR="${OUT_ROOT}/${STAMP}"
 mkdir -p "${OUT_DIR}"
 
 # ======= TRAIN =======================================================
-python3 train_reweight_ls.py \
+python3 train_reweight.py \
   -n "${DS_NAME}" -p "${DS_PARENT}" -m "${MONITOR_DIR}" -k "${CKPT_GNN}" \
   --alpha ${ALPHA} $( $INVERT && echo "--invert" ) --ls_eps ${LS_EPS} \
   --device cuda:0 --num_epochs 15 --batch_size 64 --lr 3e-5 --seed 1234
