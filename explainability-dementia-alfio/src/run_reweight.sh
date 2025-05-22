@@ -20,7 +20,8 @@ mkdir -p "${OUT_DIR}"
 python3 train_reweight.py \
   -n "${DS_NAME}" -p "${DS_PARENT}" -m "${MONITOR_DIR}" -k "${CKPT_GNN}" \
   --alpha ${ALPHA} $( $INVERT && echo "--invert" ) --ls_eps ${LS_EPS} \
-  --device cuda:0 --num_epochs 15 --batch_size 64 --lr 2e-5 --seed 1234
+  --device cuda:0 --num_epochs 15 --batch_size 64 --lr 2e-5 --seed 1234 \
+  --weight_decay 1e-7
 
 BEST_CKPT="best_reweight_ls.pt"
 export BEST_CKPT OUT_DIR DS_PARENT DS_NAME MONITOR_DIR
