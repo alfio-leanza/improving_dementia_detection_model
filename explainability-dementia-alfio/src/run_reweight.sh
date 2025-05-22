@@ -9,7 +9,7 @@ CKPT_GNN="/home/alfio/improving_dementia_detection_model/explainability-dementia
 
 ALPHA=0.3
 INVERT=false         # true -> w_i = 1-goodness
-LS_EPS=0.05          # label-smoothing ε
+LS_EPS=0.1          # label-smoothing ε
 
 STAMP=$(date +%Y%m%d_%H%M%S)
 OUT_ROOT="/home/alfio/improving_dementia_detection_model/results_reweight_ls"
@@ -20,7 +20,7 @@ mkdir -p "${OUT_DIR}"
 python3 train_reweight.py \
   -n "${DS_NAME}" -p "${DS_PARENT}" -m "${MONITOR_DIR}" -k "${CKPT_GNN}" \
   --alpha ${ALPHA} $( $INVERT && echo "--invert" ) --ls_eps ${LS_EPS} \
-  --device cuda:0 --num_epochs 15 --batch_size 64 --lr 3e-5 --seed 1234
+  --device cuda:0 --num_epochs 15 --batch_size 64 --lr 2e-5 --seed 1234
 
 BEST_CKPT="best_reweight_ls.pt"
 export BEST_CKPT OUT_DIR DS_PARENT DS_NAME MONITOR_DIR
