@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt, seaborn as sns
 import numpy as np
 
 from utils                       import seed_everything
-from monitor_dataset_fromcsv     import MonitorGraphDatasetCSV
+from monitor_dataset     import MonitorGraphDatasetCSV
 from models                      import GNNCWT2D_Mk11_1sec
 
 # ------------------ ARGPARSE -----------------------------------------
