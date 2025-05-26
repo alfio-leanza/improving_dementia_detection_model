@@ -67,8 +67,8 @@ def main():
 
     # ---- leggi true_pred.csv per split -------------------------------
     tp = pd.read_csv(a.csv_true_pred)
-    train_annot = tp[tp['dataset']=='train']
-    val_annot   = tp[tp['dataset']=='val']
+    train_annot = tp[tp['dataset']=='training']
+    val_annot   = tp[tp['dataset']=='validation']
     test_annot  = tp[tp['dataset']=='test']
 
     train_ds = MonitorGraphDatasetCSV(train_annot, a.cwt_dir, a.csv_true_pred)
