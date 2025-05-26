@@ -19,4 +19,5 @@ class MonitorGraphDatasetCSV(CWTGraphDataset):
         data = super().get(idx)
         crop_file = self.annot_df.iloc[idx].crop_file
         data.y = torch.tensor([self.good_map[crop_file]], dtype=torch.long)  # 0=Bad, 1=Good
+        data.crop_file = crop_file 
         return data
