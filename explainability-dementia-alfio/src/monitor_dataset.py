@@ -13,7 +13,6 @@ class MonitorGraphDatasetCSV(CWTGraphDataset):
         tp = pd.read_csv(true_pred_csv)
         # etichetta Good=1 se pred==true
         tp['good_label'] = (tp['pred_label'] == tp['true_label']).astype(int)
-        tp['label'] = tp['true_label']
         self.good_map    = tp.set_index('crop_file')['good_label'].to_dict()
 
     def get(self, idx):

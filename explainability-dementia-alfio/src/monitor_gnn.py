@@ -67,6 +67,7 @@ def main():
 
     # ---- leggi true_pred.csv per split -------------------------------
     tp = pd.read_csv(a.csv_true_pred)
+    tp['label'] = tp['true_label']   # <-- replica la colonna
     train_annot = tp[tp['dataset']=='training']
     val_annot   = tp[tp['dataset']=='validation']
     test_annot  = tp[tp['dataset']=='test']
