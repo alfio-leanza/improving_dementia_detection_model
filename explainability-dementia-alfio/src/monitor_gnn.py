@@ -23,7 +23,7 @@ CSV_INFER = Path("/home/alfio/improving_dementia_detection_model/explainability-
 OUT_DIR   = Path("/home/alfio/improving_dementia_detection_model/results_monitor_gnn");  OUT_DIR.mkdir(exist_ok=True)
 
 BATCH_SIZE = 64
-LR          = 1e-3
+LR          = 1e-4
 EPOCHS      = 25
 PATIENCE    = 5
 DEVICE      = "cuda" if torch.cuda.is_available() else "cpu"
@@ -77,10 +77,7 @@ def load_monitor_model():
 
 model = load_monitor_model()
 
-# ---------- loss pesata ----------
-train_counts = splits["training"].annot_df["label"].value_counts().sort_index().values
-class_weights = torch.tensor(len(splits["training"])/ (2.0*train_counts), dtype=torch.float32, device=DEVICE)
-criterion = nn.CrossEntropyLoss(weight=class_weights)
+criterion = nn.CrossEntropyLoss()
 # ---------------------------------
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=LR)
 
