@@ -33,7 +33,7 @@ random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 # ————————————————————
 # 2. DATASET & LABELS
 # ————————————————————
-from datasets import CWTGraphDataset   # import locale (file caricato)
+from datasets import CWTGraphDataset   # import locale
 
 df = pd.read_csv(CSV_INFER)
 df["label"] = (df["pred_label"] == df["true_label"]).astype(int)   # 1 = Good, 0 = Bad
@@ -43,7 +43,7 @@ for split in ["training", "validation", "test"]:
     split_df = df[df["dataset"] == split].reset_index(drop=True)[["crop_file","label"]]
     splits[split] = CWTGraphDataset(annot_df = split_df,
                                     dataset_crop_path = CWT_DIR,
-                                    norm_stats_path   = None)       # normalizzazione per-record
+                                    norm_stats_path   = None)
 
 loaders = {s: DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(s=="training"))
            for s,ds in splits.items()}
@@ -54,24 +54,43 @@ loaders = {s: DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(s=="training"))
 from models import GNNCWT2D_Mk11_1sec
 
 def load_monitor_model():
-    # 3a) istanzio la vecchia architettura (3 classi) per caricare i pesi
+    # 3a) modello 3-classi per caricare i pesi
     model3 = GNNCWT2D_Mk11_1sec(n_electrodes=19, cwt_size=(40,500), num_classes=3)
-    ckpt = torch.load(CKPT_GNN, map_location="cpu")
-    if "state_dict" in ckpt:    # pl-lightning style
-        ckpt = ckpt["state_dict"]
-        ckpt = {k.replace("model.",""):v for k,v in ckpt.items()}
-    model3.load_state_dict(ckpt, strict=True)
 
-    # 3b) creo il nuovo modello 2-classi e copio TUTTO tranne lin6.*
+    ckpt_raw = torch.load(CKPT_GNN, map_location="cpu")
+
+    # ————————————————————————
+    # MODIFICA ❶: estrazione robusta dei pesi
+    # ————————————————————————
+    if "state_dict" in ckpt_raw:
+        state = ckpt_raw["state_dict"]
+    elif "model_state_dict" in ckpt_raw:          # <- checkpoint salvato a mano
+        state = ckpt_raw["model_state_dict"]
+    else:                                         # salvato con torch.save(model.state_dict())
+        state = ckpt_raw
+
+    # rimuovo eventuali prefissi "model." o "module."
+    cleaned_state = {}
+    for k, v in state.items():
+        if k.startswith("model."):
+            k = k[6:]
+        if k.startswith("module."):
+            k = k[7:]
+        cleaned_state[k] = v
+
+    model3.load_state_dict(cleaned_state, strict=False)   # <-- MODIFICA ❷
+    # ————————————————————————
+
+    # 3b) nuovo modello 2-classi, copio tutto tranne lin6.*
     model2 = GNNCWT2D_Mk11_1sec(n_electrodes=19, cwt_size=(40,500), num_classes=2)
     sd2 = model2.state_dict()
     for k,v in model3.state_dict().items():
-        if k.startswith("lin6."):   # shape (32,3) / (3,)
+        if k.startswith("lin6."):   # layer finale
             continue
         sd2[k] = v
     model2.load_state_dict(sd2, strict=False)
 
-    # 3c) congelo tutti i layer tranne lin6
+    # 3c) congelo tutto tranne lin6
     for name,param in model2.named_parameters():
         param.requires_grad = name.startswith("lin6")
     return model2.to(DEVICE)
