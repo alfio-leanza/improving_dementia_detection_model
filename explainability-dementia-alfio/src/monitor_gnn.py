@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# monitor_good_bad.py
-import os, json, random, time
+# monitor_good_bad.py  — versione fix crop_file + class weights
+import os, json, random
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -12,7 +12,7 @@ from torch_geometric.loader import DataLoader
 
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
-import seaborn as sns  # solo per la heat-map
+import seaborn as sns
 
 # ————————————————————
 # 1. PERCORSI & PARAMETRI
@@ -33,20 +33,24 @@ random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 # ————————————————————
 # 2. DATASET & LABELS
 # ————————————————————
-from datasets import CWTGraphDataset   # import locale
+from datasets import CWTGraphDataset   # file originale
+
+class CWTCropDataset(CWTGraphDataset):
+    """Versione con crop_file nel Data."""
+    def get(self, idx):
+        g = super().get(idx)
+        g.crop_file = self.annot_df.iloc[idx]['crop_file']
+        return g
 
 df = pd.read_csv(CSV_INFER)
 df["label"] = (df["pred_label"] == df["true_label"]).astype(int)   # 1 = Good, 0 = Bad
 
-splits = {}
+splits, loaders = {}, {}
 for split in ["training", "validation", "test"]:
     split_df = df[df["dataset"] == split].reset_index(drop=True)[["crop_file","label"]]
-    splits[split] = CWTGraphDataset(annot_df = split_df,
-                                    dataset_crop_path = CWT_DIR,
-                                    norm_stats_path   = None)
-
-loaders = {s: DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(s=="training"))
-           for s,ds in splits.items()}
+    ds = CWTCropDataset(split_df, CWT_DIR, None)
+    splits[split] = ds
+    loaders[split] = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(split=="training"))
 
 # ————————————————————
 # 3. MODELLO GOOD/BAD
@@ -54,49 +58,30 @@ loaders = {s: DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(s=="training"))
 from models import GNNCWT2D_Mk11_1sec
 
 def load_monitor_model():
-    # 3a) modello 3-classi per caricare i pesi
-    model3 = GNNCWT2D_Mk11_1sec(n_electrodes=19, cwt_size=(40,500), num_classes=3)
+    model3 = GNNCWT2D_Mk11_1sec(19, (40,500), 3)
+    ckpt = torch.load(CKPT_GNN, map_location="cpu")
+    state = ckpt.get("state_dict") or ckpt.get("model_state_dict") or ckpt
+    state = {k.replace("model.","").replace("module.",""):v for k,v in state.items()}
+    model3.load_state_dict(state, strict=False)
 
-    ckpt_raw = torch.load(CKPT_GNN, map_location="cpu")
-
-    # ————————————————————————
-    # MODIFICA ❶: estrazione robusta dei pesi
-    # ————————————————————————
-    if "state_dict" in ckpt_raw:
-        state = ckpt_raw["state_dict"]
-    elif "model_state_dict" in ckpt_raw:          # <- checkpoint salvato a mano
-        state = ckpt_raw["model_state_dict"]
-    else:                                         # salvato con torch.save(model.state_dict())
-        state = ckpt_raw
-
-    # rimuovo eventuali prefissi "model." o "module."
-    cleaned_state = {}
-    for k, v in state.items():
-        if k.startswith("model."):
-            k = k[6:]
-        if k.startswith("module."):
-            k = k[7:]
-        cleaned_state[k] = v
-
-    model3.load_state_dict(cleaned_state, strict=False)   # <-- MODIFICA ❷
-    # ————————————————————————
-
-    # 3b) nuovo modello 2-classi, copio tutto tranne lin6.*
-    model2 = GNNCWT2D_Mk11_1sec(n_electrodes=19, cwt_size=(40,500), num_classes=2)
+    model2 = GNNCWT2D_Mk11_1sec(19, (40,500), 2)
     sd2 = model2.state_dict()
     for k,v in model3.state_dict().items():
-        if k.startswith("lin6."):   # layer finale
-            continue
-        sd2[k] = v
+        if not k.startswith("lin6."):
+            sd2[k] = v
     model2.load_state_dict(sd2, strict=False)
 
-    # 3c) congelo tutto tranne lin6
-    for name,param in model2.named_parameters():
-        param.requires_grad = name.startswith("lin6")
+    for n,p in model2.named_parameters():
+        p.requires_grad = n.startswith("lin6")
     return model2.to(DEVICE)
 
 model = load_monitor_model()
-criterion = nn.CrossEntropyLoss()
+
+# ---------- loss pesata ----------
+train_counts = splits["training"].annot_df["label"].value_counts().sort_index().values
+class_weights = torch.tensor(len(splits["training"])/ (2.0*train_counts), dtype=torch.float32, device=DEVICE)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
+# ---------------------------------
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=LR)
 
 # ————————————————————
@@ -104,7 +89,7 @@ optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters(
 # ————————————————————
 def run_epoch(loader, train=False):
     model.train() if train else model.eval()
-    total, correct, loss_sum = 0,0,0.0
+    tot, corr, loss_sum = 0,0,0.0
     with torch.set_grad_enabled(train):
         for batch in loader:
             batch = batch.to(DEVICE)
@@ -116,75 +101,60 @@ def run_epoch(loader, train=False):
                 optimizer.zero_grad(); loss.backward(); optimizer.step()
 
             preds = logits.argmax(1)
-            total   += y.size(0)
-            correct += (preds == y).sum().item()
-            loss_sum+= loss.item()*y.size(0)
-    return loss_sum/total, correct/total
+            tot += y.size(0); corr += (preds==y).sum().item(); loss_sum += loss.item()*y.size(0)
+    return loss_sum/tot, corr/tot
 
 best_acc, patience = 0.0, PATIENCE
-for epoch in range(1,EPOCHS+1):
-    tr_loss, tr_acc = run_epoch(loaders["training"], train=True)
+for ep in range(1,EPOCHS+1):
+    tr_loss, tr_acc = run_epoch(loaders["training"], True)
     val_loss, val_acc = run_epoch(loaders["validation"])
-
-    print(f"Ep {epoch:02d} | tr_acc {tr_acc:.3f} | val_acc {val_acc:.3f}")
-
+    print(f"Ep {ep:02d} | tr_acc {tr_acc:.3f} | val_acc {val_acc:.3f}")
     if val_acc > best_acc:
-        best_acc = val_acc; patience = PATIENCE
+        best_acc, patience = val_acc, PATIENCE
         torch.save(model.state_dict(), OUT_DIR/"best_monitor.pt")
     else:
         patience -= 1
-        if patience == 0:
+        if patience==0:
             print("Early-stopping!"); break
 
 # ————————————————————
-# 5. VALUTAZIONE FINALE
+# 5. VALUTAZIONE & SALVATAGGIO
 # ————————————————————
-model.load_state_dict(torch.load(OUT_DIR/"best_monitor.pt"))
-model.eval()
+model.load_state_dict(torch.load(OUT_DIR/"best_monitor.pt")); model.eval()
 
 def evaluate_split(split):
-    loader = loaders[split]
-    y_true, y_pred, y_logits, y_softmax, crop_files = [],[],[],[],[]
+    ldr = loaders[split]
+    y_t, y_p, logit_l, soft_l, crops = [],[],[],[],[]
     with torch.no_grad():
-        for batch in loader:
+        for batch in ldr:
             batch = batch.to(DEVICE)
             logits = model(batch.x, batch.edge_index, batch.batch)
-            soft   = torch.softmax(logits, dim=1)
-            preds  = logits.argmax(1)
+            soft   = torch.softmax(logits,1); preds = logits.argmax(1)
+            y_t   += batch.y.squeeze().cpu().tolist()
+            y_p   += preds.cpu().tolist()
+            logit_l += logits.cpu().tolist()
+            soft_l  += soft.cpu().tolist()
+            crops   += batch.crop_file  # lista
 
-            y_true  += batch.y.squeeze().cpu().tolist()
-            y_pred  += preds.cpu().tolist()
-            y_logits+= logits.cpu().tolist()
-            y_softmax += soft.cpu().tolist()
-            crop_files += batch.crop_file if hasattr(batch,"crop_file") else [""]*len(preds)
+    pd.DataFrame({
+        "crop_file": crops,
+        "true_label": y_t,
+        "pred_label": y_p,
+        "logits": [json.dumps(x) for x in logit_l],
+        "softmax": [json.dumps(x) for x in soft_l],
+        "goodness": [x[1] for x in soft_l]
+    }).to_csv(OUT_DIR/f"detailed_inference_{split}.csv", index=False)
 
-    # -- csv
-    csv_path = OUT_DIR/f"detailed_inference_{split}.csv"
-    out_df = pd.DataFrame({
-        "crop_file": crop_files,
-        "true_label": y_true,
-        "pred_label": y_pred,
-        "logits": [json.dumps(x) for x in y_logits],
-        "softmax": [json.dumps(x) for x in y_softmax],
-        "goodness": [x[1] for x in y_softmax]      # prob. classe Good
-    })
-    out_df.to_csv(csv_path, index=False)
+    rep = classification_report(y_t,y_p, target_names=["Bad","Good"], digits=4)
+    (OUT_DIR/f"classification_report_{split}.txt").write_text(rep)
 
-    # -- classification report
-    report_txt = classification_report(y_true, y_pred, target_names=["Bad","Good"], digits=4)
-    with open(OUT_DIR/f"classification_report_{split}.txt","w") as fp:
-        fp.write(report_txt)
-
-    # -- confusion matrix
-    cm = confusion_matrix(y_true, y_pred, labels=[0,1])
+    cm = confusion_matrix(y_t,y_p,labels=[0,1])
     plt.figure(figsize=(4,3))
     sns.heatmap(cm, annot=True, fmt="d", xticklabels=["Bad","Good"], yticklabels=["Bad","Good"])
     plt.xlabel("Predetto"); plt.ylabel("Reale"); plt.title(f"Confusion Matrix – {split}")
-    plt.tight_layout()
-    plt.savefig(OUT_DIR/f"confusion_matrix_{split}.png", dpi=150)
-    plt.close()
+    plt.tight_layout(); plt.savefig(OUT_DIR/f"confusion_matrix_{split}.png", dpi=150); plt.close()
 
-for split in ["training","validation","test"]:
-    evaluate_split(split)
+for s in ["training","validation","test"]:
+    evaluate_split(s)
 
-print(f"Risultati salvati in → {OUT_DIR.resolve()}")
+print(f"Risultati aggiornati in → {OUT_DIR.resolve()}")
