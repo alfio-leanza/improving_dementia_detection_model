@@ -1,199 +1,171 @@
-#!/usr/bin/env python3
-"""
-monitor_gnn.py
---------------
-Costruisce il monitor Good/Bad usando il backbone GNN congelato
-e i risultati di inferenza pre-esistenti in `true_pred.csv`.
-
-• Calcola target Good (=1) se pred_label == true_label, altrimenti Bad (=0)
-• Suddivide i crop in training / validation / test in base alla colonna `dataset`
-• Congela tutti i layer, sostituisce lin6 con Linear(32→2)
-• Ottimizza solo la nuova testa
-• Salva il checkpoint con la migliore accuracy sul validation
-• Produce CSV, classification report e confusion matrix per ogni split
-"""
-
-import os, argparse, torch, pandas as pd, numpy as np
-import matplotlib.pyplot as plt, seaborn as sns
+#!/usr/bin/env python
+# monitor_good_bad.py
+import os, json, random, time
+import numpy as np
+import pandas as pd
+from pathlib import Path
 from tqdm import tqdm
-from datetime import datetime
+
+import torch
+from torch import nn
 from torch_geometric.loader import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+
 from sklearn.metrics import classification_report, confusion_matrix
-import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import seaborn as sns  # solo per la heat-map
 
-from utils   import seed_everything
-from models  import GNNCWT2D_Mk11_1sec
-from datasets import CWTGraphDataset
-from torch_geometric.data import Data
+# ————————————————————
+# 1. PERCORSI & PARAMETRI
+# ————————————————————
+CWT_DIR   = Path("/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt")
+CKPT_GNN  = Path("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/checkpoints/train_20250510_172519/best_test_acc.pt")
+CSV_INFER = Path("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/detailed_inference/true_pred.csv")
+OUT_DIR   = Path("/home/alfio/improving_dementia_detection_model/results_monitor_gnn");  OUT_DIR.mkdir(exist_ok=True)
 
-# ------------------------------------------------------------------ #
-#                         DATASET WRAPPER                            #
-# ------------------------------------------------------------------ #
-class MonitorGraphDatasetCSV(CWTGraphDataset):
-    def __init__(self, annot_df, crop_dir, true_pred_csv):
-        super().__init__(annot_df, crop_dir, norm_stats_path=None)
+BATCH_SIZE = 64
+LR          = 1e-3
+EPOCHS      = 25
+PATIENCE    = 5
+DEVICE      = "cuda" if torch.cuda.is_available() else "cpu"
+SEED        = 42
+random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 
-        tp = pd.read_csv(true_pred_csv)
-        tp['good_label'] = (tp['pred_label'] == tp['true_label']).astype(int)
-        self.good_map    = tp.set_index('crop_file')['good_label'].to_dict()
+# ————————————————————
+# 2. DATASET & LABELS
+# ————————————————————
+from datasets import CWTGraphDataset   # import locale (file caricato)
 
-        # edge index copiato dall’implementazione originale
-        self._edge_index = torch.tensor([[0, 0, 1, 1, 10, 10, 2, 2, 2, 2, 16, 16,
-                                              16, 16, 16, 3, 3, 3, 3, 11, 11, 12, 12, 12,
-                                              4, 4, 4, 4, 17, 17, 17, 17, 5, 5, 5, 5,
-                                              13, 13, 13, 14, 14, 6, 6, 6, 6, 18, 18, 18,
-                                              18, 18, 7, 7, 7, 7, 15, 15, 8, 8, 9, 9],
-                                              [2, 16, 16, 3, 2, 12, 0, 16, 4, 10, 0, 1,
-                                              3, 17, 2, 1, 11, 5, 16, 3, 13, 10, 4, 14,
-                                              2, 17, 6, 12, 16, 5, 18, 4, 3, 13, 7, 17,
-                                              11, 5, 15, 12, 6, 4, 18, 8, 14, 17, 7, 9,
-                                              8, 6, 5, 15, 9, 18, 13, 7, 6, 18, 18, 7]])
-    # --------------------------------------------------------------
-    def get(self, idx):
-        rec       = self.annot_df.iloc[idx]
-        crop_path = os.path.join(self.dataset_crop_path, rec['crop_file'])
-        cwt       = np.load(crop_path).astype(np.float32)
+df = pd.read_csv(CSV_INFER)
+df["label"] = (df["pred_label"] == df["true_label"]).astype(int)   # 1 = Good, 0 = Bad
 
-        x = np.moveaxis(cwt, 2, 0).reshape(19, -1)
-        x = torch.tensor(x)
-        y = torch.tensor([self.good_map[rec['crop_file']]], dtype=torch.long)
+splits = {}
+for split in ["training", "validation", "test"]:
+    split_df = df[df["dataset"] == split].reset_index(drop=True)[["crop_file","label"]]
+    splits[split] = CWTGraphDataset(annot_df = split_df,
+                                    dataset_crop_path = CWT_DIR,
+                                    norm_stats_path   = None)       # normalizzazione per-record
 
-        data = Data(edge_index=self._edge_index, x=x, y=y)
-        data.crop_file = rec['crop_file']  # necessario per l’export
-        return data
+loaders = {s: DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(s=="training"))
+           for s,ds in splits.items()}
 
-# ------------------------------------------------------------------ #
-#                       TRAIN / COLLECT UTILS                        #
-# ------------------------------------------------------------------ #
-@torch.no_grad()
-def accuracy(model, loader, device):
-    model.eval(); correct = tot = 0
-    for d in loader:
-        d = d.to(device)
-        pred = model(d.x, d.edge_index, d.batch).argmax(1)
-        correct += (pred == d.y.squeeze()).sum().item()
-        tot     += d.y.size(0)
-    return correct / tot
+# ————————————————————
+# 3. MODELLO GOOD/BAD
+# ————————————————————
+from models import GNNCWT2D_Mk11_1sec
 
-@torch.no_grad()
-def collect_results(model, loader, device):
-    model.eval(); rows = []
-    for d in loader:
-        d = d.to(device)
-        logits = model(d.x, d.edge_index, d.batch)
-        soft   = F.softmax(logits, dim=1).cpu().numpy()
-        out    = logits.cpu().numpy()
-        pred   = soft.argmax(1)
-        for i in range(pred.shape[0]):
-            rows.append([
-                d.crop_file[i],
-                int(d.y[i].item()),
-                int(pred[i]),
-                out[i].tolist(),
-                soft[i].tolist(),
-                float(soft[i].max())
-            ])
-    y_true = np.array([r[1] for r in rows])
-    y_pred = np.array([r[2] for r in rows])
-    return rows, y_true, y_pred
+def load_monitor_model():
+    # 3a) istanzio la vecchia architettura (3 classi) per caricare i pesi
+    model3 = GNNCWT2D_Mk11_1sec(n_electrodes=19, cwt_size=(40,500), num_classes=3)
+    ckpt = torch.load(CKPT_GNN, map_location="cpu")
+    if "state_dict" in ckpt:    # pl-lightning style
+        ckpt = ckpt["state_dict"]
+        ckpt = {k.replace("model.",""):v for k,v in ckpt.items()}
+    model3.load_state_dict(ckpt, strict=True)
 
-# ------------------------------------------------------------------ #
-#                             MAIN                                   #
-# ------------------------------------------------------------------ #
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--true_pred_csv', required=True)
-    ap.add_argument('--cwt_dir',       required=True)
-    ap.add_argument('--ckpt_gnn',      required=True)
-    ap.add_argument('--device',        default='cuda:0')
-    ap.add_argument('--epochs',        default=10, type=int)
-    ap.add_argument('--batch_size',    default=64, type=int)
-    ap.add_argument('--lr',            default=1e-3, type=float)
-    ap.add_argument('--seed',          default=1234, type=int)
-    ap.add_argument('--out_root',      default='/home/alfio/improving_dementia_detection_model/results_monitor_gnn')
-    args = ap.parse_args()
+    # 3b) creo il nuovo modello 2-classi e copio TUTTO tranne lin6.*
+    model2 = GNNCWT2D_Mk11_1sec(n_electrodes=19, cwt_size=(40,500), num_classes=2)
+    sd2 = model2.state_dict()
+    for k,v in model3.state_dict().items():
+        if k.startswith("lin6."):   # shape (32,3) / (3,)
+            continue
+        sd2[k] = v
+    model2.load_state_dict(sd2, strict=False)
 
-    seed_everything(args.seed)
-    dev = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    # 3c) congelo tutti i layer tranne lin6
+    for name,param in model2.named_parameters():
+        param.requires_grad = name.startswith("lin6")
+    return model2.to(DEVICE)
 
-    # ------------ prepara annotazioni e split -----------------------
-    tp = pd.read_csv(args.true_pred_csv)
-    tp['dataset'] = tp['dataset'].str.lower()
-    tp['split']   = tp['dataset'].str.extract(r'(train|val|test)')
-    # colonna fittizia label per compatibilità (non usata)
-    tp['label']   = tp['true_label']
+model = load_monitor_model()
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=LR)
 
-    split_df = {
-        'train': tp[tp['split'] == 'train'],
-        'val'  : tp[tp['split'] == 'val'],
-        'test' : tp[tp['split'] == 'test']
-    }
+# ————————————————————
+# 4. TRAINING LOOP
+# ————————————————————
+def run_epoch(loader, train=False):
+    model.train() if train else model.eval()
+    total, correct, loss_sum = 0,0,0.0
+    with torch.set_grad_enabled(train):
+        for batch in loader:
+            batch = batch.to(DEVICE)
+            logits = model(batch.x, batch.edge_index, batch.batch)
+            y = batch.y.squeeze()
+            loss = criterion(logits, y)
 
-    ds = {k: MonitorGraphDatasetCSV(v, args.cwt_dir, args.true_pred_csv)
-          for k,v in split_df.items()}
-    dl = {k: DataLoader(ds[k], batch_size=args.batch_size, shuffle=(k=='train'),
-                        num_workers=4, pin_memory=False) for k in ds}
+            if train:
+                optimizer.zero_grad(); loss.backward(); optimizer.step()
 
-    # ------------ modello ------------------------------------------
-    model = GNNCWT2D_Mk11_1sec(19, (40,500), 3).to(dev)
-    sd = torch.load(args.ckpt_gnn, map_location=dev)
-    sd = sd['model_state_dict'] if 'model_state_dict' in sd else sd
-    model.load_state_dict(sd, strict=False)
+            preds = logits.argmax(1)
+            total   += y.size(0)
+            correct += (preds == y).sum().item()
+            loss_sum+= loss.item()*y.size(0)
+    return loss_sum/total, correct/total
 
-    for p in model.parameters(): p.requires_grad = False
-    model.lin6 = torch.nn.Linear(model.lin6.in_features, 2).to(dev)
-    torch.nn.init.xavier_uniform_(model.lin6.weight)
+best_acc, patience = 0.0, PATIENCE
+for epoch in range(1,EPOCHS+1):
+    tr_loss, tr_acc = run_epoch(loaders["training"], train=True)
+    val_loss, val_acc = run_epoch(loaders["validation"])
 
-    opt = torch.optim.Adam(model.lin6.parameters(), lr=args.lr, weight_decay=1e-4)
-    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.3, 1.0]).to(dev))
+    print(f"Ep {epoch:02d} | tr_acc {tr_acc:.3f} | val_acc {val_acc:.3f}")
 
-    run_id  = datetime.now().strftime('%Y%m%d_%H%M%S')
-    out_dir = os.path.join(args.out_root, run_id); os.makedirs(out_dir, exist_ok=True)
-    tb      = SummaryWriter(f'/home/alfio/improving_dementia_detection_model/results_monitor_gnn/runs/monitor_gnn_{run_id}')
+    if val_acc > best_acc:
+        best_acc = val_acc; patience = PATIENCE
+        torch.save(model.state_dict(), OUT_DIR/"best_monitor.pt")
+    else:
+        patience -= 1
+        if patience == 0:
+            print("Early-stopping!"); break
 
-    best_val = 0.0
-    for ep in range(args.epochs):
-        model.train(); running = 0; corr = tot = 0
-        for batch in tqdm(dl['train'], desc=f'Epoch {ep:02d}', ncols=100):
-            batch = batch.to(dev); opt.zero_grad()
-            out = model(batch.x, batch.edge_index, batch.batch)
-            loss = loss_fn(out, batch.y.squeeze()); running += loss.item()
-            loss.backward(); opt.step()
-            corr += (out.argmax(1)==batch.y.squeeze()).sum().item(); tot += batch.y.size(0)
+# ————————————————————
+# 5. VALUTAZIONE FINALE
+# ————————————————————
+model.load_state_dict(torch.load(OUT_DIR/"best_monitor.pt"))
+model.eval()
 
-        tr_acc = corr / tot
-        val_acc = accuracy(model, dl['val'], dev)
-        tb.add_scalars('Acc', {'train': tr_acc, 'val': val_acc}, ep)
-        print(f'[{ep:02d}] acc tr/val: {tr_acc:.3f}/{val_acc:.3f}')
+def evaluate_split(split):
+    loader = loaders[split]
+    y_true, y_pred, y_logits, y_softmax, crop_files = [],[],[],[],[]
+    with torch.no_grad():
+        for batch in loader:
+            batch = batch.to(DEVICE)
+            logits = model(batch.x, batch.edge_index, batch.batch)
+            soft   = torch.softmax(logits, dim=1)
+            preds  = logits.argmax(1)
 
-        if val_acc > best_val:
-            best_val = val_acc
-            torch.save(model.state_dict(), os.path.join(out_dir, 'best.pt'))
-            print('>>> nuovo best (val) salvato')
+            y_true  += batch.y.squeeze().cpu().tolist()
+            y_pred  += preds.cpu().tolist()
+            y_logits+= logits.cpu().tolist()
+            y_softmax += soft.cpu().tolist()
+            crop_files += batch.crop_file if hasattr(batch,"crop_file") else [""]*len(preds)
 
-    # ------------ export risultati ---------------------------------
-    model.load_state_dict(torch.load(os.path.join(out_dir, 'best.pt'), map_location=dev))
+    # -- csv
+    csv_path = OUT_DIR/f"detailed_inference_{split}.csv"
+    out_df = pd.DataFrame({
+        "crop_file": crop_files,
+        "true_label": y_true,
+        "pred_label": y_pred,
+        "logits": [json.dumps(x) for x in y_logits],
+        "softmax": [json.dumps(x) for x in y_softmax],
+        "goodness": [x[1] for x in y_softmax]      # prob. classe Good
+    })
+    out_df.to_csv(csv_path, index=False)
 
-    for split in ['train', 'val', 'test']:
-        rows, y_true, y_pred = collect_results(model, dl[split], dev)
-        # CSV
-        pd.DataFrame(rows, columns=['crop_file','true_label','pred_label',
-                                    'logits','softmax','goodness']
-        ).to_csv(os.path.join(out_dir, f'{split}_results.csv'), index=False)
-        # report
-        with open(os.path.join(out_dir, f'{split}_classification_report.txt'), 'w') as f:
-            f.write(classification_report(y_true, y_pred, digits=4))
-        # confusion matrix
-        cm = confusion_matrix(y_true, y_pred)
-        plt.figure(figsize=(4,4))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=['Bad','Good'], yticklabels=['Bad','Good'])
-        plt.title(f'Confusion – {split}'); plt.tight_layout()
-        plt.savefig(os.path.join(out_dir, f'{split}_confusion_matrix.png')); plt.close()
+    # -- classification report
+    report_txt = classification_report(y_true, y_pred, target_names=["Bad","Good"], digits=4)
+    with open(OUT_DIR/f"classification_report_{split}.txt","w") as fp:
+        fp.write(report_txt)
 
-    print(f'\nRisultati salvati in {out_dir}')
-    tb.close()
+    # -- confusion matrix
+    cm = confusion_matrix(y_true, y_pred, labels=[0,1])
+    plt.figure(figsize=(4,3))
+    sns.heatmap(cm, annot=True, fmt="d", xticklabels=["Bad","Good"], yticklabels=["Bad","Good"])
+    plt.xlabel("Predetto"); plt.ylabel("Reale"); plt.title(f"Confusion Matrix – {split}")
+    plt.tight_layout()
+    plt.savefig(OUT_DIR/f"confusion_matrix_{split}.png", dpi=150)
+    plt.close()
 
-if __name__ == '__main__':
-    main()
+for split in ["training","validation","test"]:
+    evaluate_split(split)
+
+print(f"Risultati salvati in → {OUT_DIR.resolve()}")
