@@ -67,7 +67,7 @@ class GNNCWT2D_Mk11_1sec(Module):
         self.drop7 = Dropout(p=0.2)
         # graph operations on graph-level features
         self.lin5 = Linear(64, 32)
-        self.lin6 = Linear(32, num_classes)
+        #self.lin6 = Linear(32, num_classes) # removed due to the embedding size of the ArcFaceLoss
 
 
     def forward(self, x, edge_index, batch):
@@ -120,7 +120,7 @@ class GNNCWT2D_Mk11_1sec(Module):
         x = self.lin5(x)
         x = F.relu(x)
         # torch.Size([64, 32])
-        x = self.lin6(x)
+        #x = self.lin6(x) removed for the same reason described above in the __init__
         # torch.Size([64, 2])
 
         # automatic softmax by torch.nn.CrossEntropyLoss()
