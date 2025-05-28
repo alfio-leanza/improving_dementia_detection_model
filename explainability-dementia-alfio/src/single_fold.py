@@ -235,7 +235,7 @@ def main():
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     #loss_fn = torch.nn.CrossEntropyLoss()
-    loss_fn = ArcFaceLoss(num_classes=2, embedding_size=32, margin=0.50, scale=30).to(device) # new loss function
+    loss_fn = ArcFaceLoss(num_classes=3, embedding_size=32, margin=0.50, scale=30).to(device) # new loss function
     #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
 
     print(f'Session timestamp: {session_timestamp}')
