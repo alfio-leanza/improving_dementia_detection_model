@@ -240,9 +240,9 @@ def main():
     model = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes)
     model.to(device)
     #optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay) #crossentropy
+    loss_fn = ArcFaceLoss(num_classes=3, embedding_size=32, margin=0.50, scale=30).to(device) # new loss function #arcface
     optimizer = torch.optim.Adam(list(model.parameters()) + list(loss_fn.parameters()),lr=args.lr,weight_decay=args.weight_decay) # new optimizer for ArcFaceLoss
     #loss_fn = torch.nn.CrossEntropyLoss()
-    loss_fn = ArcFaceLoss(num_classes=3, embedding_size=32, margin=0.50, scale=30).to(device) # new loss function #arcface
     #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
 
     print(f'Session timestamp: {session_timestamp}')
