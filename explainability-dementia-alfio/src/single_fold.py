@@ -19,6 +19,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 from utils import seed_everything, write_tboard_dict
 from datasets import *
 from models import *
+from pytorch_metric_learning.losses import ArcFaceLoss         # <<<--- new import for ArcFaceLoss
 
 
 """
@@ -186,8 +187,8 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/checkpoints/train_{session_timestamp}/'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/arcface/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/arcface/checkpoints/train_{session_timestamp}/'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -233,7 +234,8 @@ def main():
     model = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes)
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    loss_fn = torch.nn.CrossEntropyLoss()
+    #loss_fn = torch.nn.CrossEntropyLoss()
+    loss_fn = ArcFaceLoss(num_classes=2, embedding_size=32, margin=0.50, scale=30).to(device) # new loss function
     #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
 
     print(f'Session timestamp: {session_timestamp}')
@@ -246,7 +248,8 @@ def main():
     #write_tboard_dict(config_dict, writer)
 
     # Training loop
-    best_test_accuracy = 0
+    #best_test_accuracy = 0
+    best_val_accuracy = 0 # saving the best model based on validation accuracy
     for current_epoch in range(args.num_epochs):
         print(f'\nStarting epoch {current_epoch:03d}.')
         train_loss, train_acc = train_one_epoch(model, current_epoch, writer, train_dataloader, device, optimizer, loss_fn)
@@ -279,18 +282,25 @@ def main():
         print('done.')
 
         # Save best test acc model (morally and technically WRONG!)
-        if test_acc > best_test_accuracy:
-            print("New best test acc, saving checkpoint... ", end='')
-            best_test_accuracy = test_acc
-            torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_test_acc.pt'))
-            print('done.')
+        #if test_acc > best_test_accuracy:
+            #print("New best test acc, saving checkpoint... ", end='')
+            #best_test_accuracy = test_acc
+            #torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_test_acc.pt'))
+            #print('done.')
+
+        # Save best val acc model
+        if val_acc > best_val_accuracy:
+            print("New best val acc, saving checkpoint... ", end='')
+            best_val_accuracy = val_acc
+            torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_val_acc.pt'))
+
 
     # Eval val set
     crop_pred_counter = CropPredCounter()
     consensus_pred_counter = ConsensusPredCounter()
     avg_pred_counter = AvgPredCounter()
     print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Evaluating on val set... <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_test_acc.pt'), map_location=device)['model_state_dict'])
+    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_val_acc.pt'), map_location=device)['model_state_dict'])
     model.eval()
     for s in tqdm(range(len(val_df)), ncols=100):
         data = val_dataset[s]
@@ -325,7 +335,7 @@ def main():
     consensus_pred_counter = ConsensusPredCounter()
     avg_pred_counter = AvgPredCounter()
     print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Evaluating on test set... <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_test_acc.pt'), map_location=device)['model_state_dict'])
+    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_val_acc.pt'), map_location=device)['model_state_dict'])
     model.eval()
     for s in tqdm(range(len(test_df)), ncols=100):
         data = test_dataset[s]

@@ -167,8 +167,7 @@ def evaluate_split(split):
 
     cm = confusion_matrix(y_t,y_p,labels=[0,1])
     plt.figure(figsize=(4,3))
-    sns.color_palette(palette = 'Blues', as_cmap=True)
-    sns.heatmap(cm, annot=True, fmt="d", xticklabels=["Bad","Good"], yticklabels=["Bad","Good"])
+    sns.heatmap(cm, annot=True, fmt="d", xticklabels=["Bad","Good"], yticklabels=["Bad","Good"], cmap='Blues')
     plt.xlabel("Predetto"); plt.ylabel("Reale"); plt.title(f"Confusion Matrix – {split}")
     plt.tight_layout(); plt.savefig(OUT_DIR/f"confusion_matrix_{split}.png", dpi=150); plt.close()
 
