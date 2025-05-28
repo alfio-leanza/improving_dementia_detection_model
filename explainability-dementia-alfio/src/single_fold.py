@@ -166,7 +166,10 @@ def val_one_epoch(model, epoch, tb_writer, loader, device, loss_fn, testing=Fals
         loss  = loss_fn(feats, data.y) #arcface
         running_loss += loss.item()
         # Running acc
-        pred = out.argmax(dim=1)
+        #pred = out.argmax(dim=1) #crossentropy
+        with torch.no_grad(): #arcface
+            logits = loss_fn.get_logits(feats) #arcface
+            pred   = logits.argmax(dim=1) #arcface
         correct += int((pred == data.y).sum())
 
     print('  Logging to TensorBoard... ', end='')
