@@ -35,70 +35,75 @@ def compute_print_metrics(gt_array, pred_array):
     print(cm)
 
 
-def evaluate_and_save(model, dataset_df, dataset_obj, set_name, device, results_dir):
-    """Valuta il modello sul set specificato e salva report, conf-matrix e inferenze."""
+def evaluate_and_save(model, dataset_df, dataset_obj,
+                      set_name, device, results_dir, loss_fn):
+    """Valuta il modello e salva report, confusion matrix e CSV inferenze."""
     model.eval()
-    inference_rows = []
-    gt_array = np.empty((0,), dtype=np.uint8)
-    pred_array = np.empty((0,), dtype=np.uint8)
+    inference_rows, gt_array, pred_array = [], [], []
 
-    for s in tqdm(range(len(dataset_df)), ncols=100, desc=f"  {set_name.title()} Eval"):
+    for s in tqdm(range(len(dataset_df)), ncols=100,
+                  desc=f"  {set_name.title()} Eval"):
         data = dataset_obj[s].to(device)
         with torch.no_grad():
-            out = model(data.x, data.edge_index, torch.zeros(19, dtype=torch.int64).to(device))
+            embeds  = model(data.x, data.edge_index, torch.zeros(19,
+                             dtype=torch.int64, device=device))
+            logits_t = loss_fn.get_logits(embeds)
 
-        logits = np.squeeze(out.detach().cpu().numpy())
+        logits    = np.squeeze(logits_t.cpu().numpy())
         soft_vals = softmax(logits)
-        pred_label = int(np.argmax(logits))
-        true_label = int(dataset_df.iloc[s]['label'])
+        pred_lbl  = int(np.argmax(logits))
+
+        row = dataset_df.iloc[s]
+        true_lbl = int(row.get('label', row.get('true_label', -1)))
 
         inference_rows.append({
-            'crop_file':         dataset_df.iloc[s]['crop_file'],
+            'crop_file':         row['crop_file'],
             'logits':            logits.tolist(),
             'dataset':           set_name,
             'softmax_values':    soft_vals.tolist(),
-            'pred_label':        pred_label,
-            'true_label':        true_label,
-            'original_rec':      dataset_df.iloc[s]['original_rec'],
-            'crop_start_sample': dataset_df.iloc[s]['start_sample'],
-            'crop_end_sample':   dataset_df.iloc[s]['end_sample'],
+            'pred_label':        pred_lbl,
+            'true_label':        true_lbl,
+            'original_rec':      row.get('original_rec', ''),
+            'crop_start_sample': row.get('crop_start_sample',
+                                         row.get('start_sample', np.nan)),
+            'crop_end_sample':   row.get('crop_end_sample',
+                                         row.get('end_sample',  np.nan)),
         })
 
-        gt_array   = np.append(gt_array,  true_label)
-        pred_array = np.append(pred_array, pred_label)
+        gt_array.append(true_lbl)
+        pred_array.append(pred_lbl)
 
-    # ──────── salvataggi ──────── #
+    # ---------- salvataggi ---------- #
     os.makedirs(results_dir, exist_ok=True)
 
-    # 1) classification report .txt
-    class_report = classification_report(gt_array, pred_array, digits=4)
-    with open(os.path.join(results_dir, f"{set_name}_classification_report.txt"), 'w') as f:
-        f.write(class_report)
+    report_txt = classification_report(gt_array, pred_array, digits=4)
+    with open(os.path.join(results_dir,
+              f"{set_name}_classification_report.txt"), 'w') as f:
+        f.write(report_txt)
 
-    # 2) confusion matrix .png
     cm = confusion_matrix(gt_array, pred_array)
     plt.figure(figsize=(6, 6))
     plt.imshow(cm, interpolation='nearest')
     plt.title(f'Confusion Matrix - {set_name.title()}')
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
+    plt.xlabel('Predicted'); plt.ylabel('True')
     plt.colorbar()
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
             plt.text(j, i, str(cm[i, j]), ha='center', va='center')
     plt.tight_layout()
-    plt.savefig(os.path.join(results_dir, f"{set_name}_confusion_matrix.png"))
+    plt.savefig(os.path.join(results_dir,
+                f"{set_name}_confusion_matrix.png"))
     plt.close()
 
-    # 3) inferenze .csv
     pd.DataFrame(inference_rows).to_csv(
-        os.path.join(results_dir, f"{set_name}_inferences.csv"), index=False
+        os.path.join(results_dir, f"{set_name}_inferences.csv"),
+        index=False
     )
 
-    # log a console
     print(f"\n== {set_name.upper()} ==\n")
-    print(class_report)
+    print(report_txt)
     print(cm)
+
 
 
 def argparser():
@@ -194,64 +199,65 @@ def compute_print_metrics(gt_array, pred_array):
 
 def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn):
     model.train()
-    running_loss = 0.
+    running_loss = 0.0
     correct = 0
+    all_preds, all_labels = [], []
 
-    for i, data in enumerate(tqdm(loader, ncols=100, desc='  Train')):
+    for data in tqdm(loader, ncols=100, desc='  Train'):
         data = data.to(device)
         optimizer.zero_grad()
-        out = model(data.x, data.edge_index, data.batch)
-        loss = loss_fn(out, data.y)
-        running_loss += loss.item()
+
+        # ① il modello ora restituisce EMBEDDINGS, non logits
+        embeds = model(data.x, data.edge_index, data.batch)
+
+        # ② ArcFaceLoss calcola internamente i logits
+        loss = loss_fn(embeds, data.y)
         loss.backward()
         optimizer.step()
-        # Running acc
-        pred = out.argmax(dim=1)
-        correct += int((pred == data.y).sum())
+        running_loss += loss.item()
 
-    print('  Logging to TensorBoard... ', end='')
-    # log epoch loss
+        # ③ otteniamo i logits per la metrica
+        logits = loss_fn.get_logits(embeds).detach()
+        preds  = torch.argmax(logits, dim=1)
+        correct += int((preds == data.y).sum())
+
     avg_loss = running_loss / len(loader)
-    tb_writer.add_scalar('Loss/train', avg_loss, epoch)
-    # log epoch acc
     epoch_acc = correct / len(loader.dataset)
-    tb_writer.add_scalar('Accuracy/train', epoch_acc, epoch)
-    print('done.')
 
-    return (avg_loss, epoch_acc)
+    tb_writer.add_scalar('Loss/train', avg_loss, epoch)
+    tb_writer.add_scalar('Accuracy/train', epoch_acc, epoch)
+
+    return avg_loss, epoch_acc
+
 
 
 def val_one_epoch(model, epoch, tb_writer, loader, device, loss_fn, testing=False):
     model.eval()
-    running_loss = 0.
+    running_loss = 0.0
     correct = 0
+    mode = 'test' if testing else 'val'
+    desc = '  Test' if testing else '  Val'
 
-    tqdm_desc = '  Test' if testing else '  Val'
-    for i, data in enumerate(tqdm(loader, ncols=100, desc=tqdm_desc)):
-        data = data.to(device)
-        out = model(data.x, data.edge_index, data.batch)
-        loss = loss_fn(out, data.y)
-        running_loss += loss.item()
-        # Running acc
-        pred = out.argmax(dim=1)
-        correct += int((pred == data.y).sum())
+    with torch.no_grad():
+        for data in tqdm(loader, ncols=100, desc=desc):
+            data = data.to(device)
 
-    print('  Logging to TensorBoard... ', end='')
-    # log epoch loss
+            embeds = model(data.x, data.edge_index, data.batch)
+            loss   = loss_fn(embeds, data.y)
+            running_loss += loss.item()
+
+            logits = loss_fn.get_logits(embeds)
+            preds  = torch.argmax(logits, dim=1)
+            correct += int((preds == data.y).sum())
+
     avg_loss = running_loss / len(loader)
-    if testing:
-        tb_writer.add_scalar('Loss/test', avg_loss, epoch)
-    else:
-        tb_writer.add_scalar('Loss/val', avg_loss, epoch)
-    # log epoch acc
     epoch_acc = correct / len(loader.dataset)
-    if testing:
-        tb_writer.add_scalar('Accuracy/test', epoch_acc, epoch)
-    else:
-        tb_writer.add_scalar('Accuracy/val', epoch_acc, epoch)
-    print('done.')
 
-    return (avg_loss, epoch_acc)
+    tb_writer.add_scalar(f'Loss/{mode}', avg_loss, epoch)
+    tb_writer.add_scalar(f'Accuracy/{mode}', epoch_acc, epoch)
+
+    return avg_loss, epoch_acc
+
 
 
 def main():
@@ -308,9 +314,11 @@ def main():
     num_classes = args.classes.count('-') + 1
     model = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes)
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     embedding_size = num_classes                     # dimensione embedding per ArcFace
     loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_size=embedding_size)
+    # include i pesi del modello + quelli interni a ArcFaceLoss
+    parameters = list(model.parameters()) + list(loss_fn.parameters())
+    optimizer   = torch.optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
     #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
 
     print(f'Session timestamp: {session_timestamp}')
@@ -440,9 +448,13 @@ def main():
     gt_array, pred_array = avg_pred_counter.get_arrays()
     compute_print_metrics(gt_array, pred_array)
 
-    evaluate_and_save(model, train_df, train_dataset, 'train', device, results_save_dir)
-    evaluate_and_save(model, val_df,   val_dataset,   'val',   device, results_save_dir)
-    evaluate_and_save(model, test_df,  test_dataset,  'test',  device, results_save_dir)
+    evaluate_and_save(model, train_df, train_dataset, 'train',
+                    device, results_save_dir, loss_fn)
+    evaluate_and_save(model, val_df,   val_dataset,   'val',
+                    device, results_save_dir, loss_fn)
+    evaluate_and_save(model, test_df,  test_dataset,  'test',
+                    device, results_save_dir, loss_fn)
+
 
 if __name__ == "__main__":
     main()
