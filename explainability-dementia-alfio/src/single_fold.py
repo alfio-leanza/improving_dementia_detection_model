@@ -19,8 +19,6 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 from utils import seed_everything, write_tboard_dict
 from datasets import *
 from models import *
-from pytorch_metric_learning.losses import ArcFaceLoss         # <<<--- new import for ArcFaceLoss
-
 
 """
 This is a copy of kfold_crossval.py made to work with a single custom fold (Miltiadous).
@@ -133,11 +131,7 @@ def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn)
         loss.backward()
         optimizer.step()
         # Running acc
-        #pred = out.argmax(dim=1) #crossentropy
-        # For ArcFaceLoss
-        with torch.no_grad(): #arcface
-            logits = loss_fn.get_logits(out)  #arcface    
-            pred   = logits.argmax(dim=1) #arcface
+        pred = out.argmax(dim=1)
         correct += int((pred == data.y).sum())
 
     print('  Logging to TensorBoard... ', end='')
@@ -160,16 +154,11 @@ def val_one_epoch(model, epoch, tb_writer, loader, device, loss_fn, testing=Fals
     tqdm_desc = '  Test' if testing else '  Val'
     for i, data in enumerate(tqdm(loader, ncols=100, desc=tqdm_desc)):
         data = data.to(device)
-        #out = model(data.x, data.edge_index, data.batch) #crossentropy
-        #loss = loss_fn(out, data.y)  #crossentropy
-        feats = model(data.x, data.edge_index, data.batch) #arcface
-        loss  = loss_fn(feats, data.y) #arcface
+        out = model(data.x, data.edge_index, data.batch)
+        loss = loss_fn(out, data.y)
         running_loss += loss.item()
         # Running acc
-        #pred = out.argmax(dim=1) #crossentropy
-        with torch.no_grad(): #arcface
-            logits = loss_fn.get_logits(feats) #arcface
-            pred   = logits.argmax(dim=1) #arcface
+        pred = out.argmax(dim=1)
         correct += int((pred == data.y).sum())
 
     print('  Logging to TensorBoard... ', end='')
@@ -242,10 +231,8 @@ def main():
     num_classes = args.classes.count('-') + 1
     model = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes)
     model.to(device)
-    #optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay) #crossentropy
-    loss_fn = ArcFaceLoss(num_classes=3, embedding_size=32, margin=0.50, scale=30).to(device) # new loss function #arcface
-    optimizer = torch.optim.Adam(list(model.parameters()) + list(loss_fn.parameters()),lr=args.lr,weight_decay=args.weight_decay) # new optimizer for ArcFaceLoss
-    #loss_fn = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    loss_fn = torch.nn.CrossEntropyLoss()
     #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
 
     print(f'Session timestamp: {session_timestamp}')
@@ -312,7 +299,6 @@ def main():
     print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Evaluating on val set... <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
     model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_val_acc.pt'), map_location=device)['model_state_dict'])
     model.eval()
-    '''
     for s in tqdm(range(len(val_df)), ncols=100):
         data = val_dataset[s]
         data = data.to(device)
@@ -325,20 +311,7 @@ def main():
         orig_rec = annotations[annotations['crop_file']==crop_name].iloc[0]['original_rec']
         crop_pred_counter.add_pred(crop_gt, crop_act)
         consensus_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
-        avg_pred_counter.add_pred(crop_gt, crop_act, orig_rec) ''' # crossentropy
-    
-    for s in tqdm(range(len(val_df)), ncols=100):
-        data = val_dataset[s].to(device)
-        batch_vec = torch.zeros(data.x.size(0), dtype=torch.int64, device=device)
-        with torch.no_grad():
-            feats  = model(data.x, data.edge_index, batch_vec)      # [1,32]
-            logits = loss_fn.get_logits(feats)                      # [1,3]
-            probs  = torch.softmax(logits, dim=1)                   # [1,3]
-        crop_gt  = val_df.iloc[s]['label']
-        crop_act = probs.squeeze(0).cpu().numpy()                # array(3,)
-        crop_pred_counter.add_pred(crop_gt, crop_act)
-        consensus_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
-        avg_pred_counter.add_pred(crop_gt, crop_act, orig_rec) #arcface
+        avg_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
 
     # Final metrics
     # Crop pred counter
