@@ -323,6 +323,8 @@ def main():
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None)
 
+    num_classes = args.classes.count('-') + 1
+
     # pesi inversamente proporzionali alla frequenza di ciascuna classe
     class_sample_count = torch.tensor(
         [(train_df['label'] == c).sum() for c in range(num_classes)],
@@ -338,7 +340,6 @@ def main():
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
-    num_classes = args.classes.count('-') + 1
     embedding_size = 128                     # dimensione embedding per ArcFace
     model = GNNCWT2D_Mk11_1sec_Arc(19, (40, 500), embedding_size)
     model.to(device)
