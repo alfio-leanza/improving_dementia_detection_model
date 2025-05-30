@@ -325,16 +325,25 @@ def main():
 
     num_classes = args.classes.count('-') + 1
 
-    # pesi inversamente proporzionali alla frequenza di ciascuna classe
-    class_sample_count = torch.tensor(
-        [(train_df['label'] == c).sum() for c in range(num_classes)],
-        dtype=torch.float
+    # ───── Sampler bilanciato (versione robusta) ─────
+    train_labels = torch.tensor(train_df['label'].values, dtype=torch.long)
+
+    # conteggio campioni per classe → tensor float
+    class_sample_count = torch.bincount(train_labels, minlength=num_classes).float()
+
+    # pesi inversi, nessuna classe assente (ma proteggiamo da div/0)
+    weights_per_class = torch.where(class_sample_count > 0,
+                                    1.0 / class_sample_count,
+                                    torch.zeros_like(class_sample_count))
+
+    # peso per ogni esempio del train (stesso ordine di train_df)
+    sample_weights = weights_per_class[train_labels].double()     # richiesto dal sampler
+
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
     )
-    class_weights = 1.0 / class_sample_count
-    sample_weights = train_df['label'].apply(lambda x: class_weights[x]).values
-    sampler = WeightedRandomSampler(sample_weights,
-                                    num_samples=len(sample_weights),
-                                    replacement=True)
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False, sampler = sampler)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
