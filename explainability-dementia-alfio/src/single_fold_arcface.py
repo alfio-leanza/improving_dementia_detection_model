@@ -355,8 +355,7 @@ def main():
     loss_fn = ArcFaceLoss(num_classes=num_classes,
                       embedding_size=embedding_size,
                       margin=0.5,      
-                      scale=40,
-                      easy_margin=True)
+                      scale=40)
 
     #loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_size=embedding_size)
     # include i pesi del modello + quelli interni a ArcFaceLoss
