@@ -20,6 +20,7 @@ from utils import seed_everything, write_tboard_dict
 from datasets import *
 from model_arcface import *
 from pytorch_metric_learning.losses import ArcFaceLoss # NEW
+from torch.utils.data import WeightedRandomSampler
 
 """
 This is a copy of kfold_crossval.py made to work with a single custom fold (Miltiadous).
@@ -322,7 +323,18 @@ def main():
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False)
+    # pesi inversamente proporzionali alla frequenza di ciascuna classe
+    class_sample_count = torch.tensor(
+        [(train_df['label'] == c).sum() for c in range(num_classes)],
+        dtype=torch.float
+    )
+    class_weights = 1.0 / class_sample_count
+    sample_weights = train_df['label'].apply(lambda x: class_weights[x]).values
+    sampler = WeightedRandomSampler(sample_weights,
+                                    num_samples=len(sample_weights),
+                                    replacement=True)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False, sampler = sampler)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
@@ -330,12 +342,10 @@ def main():
     embedding_size = 128                     # dimensione embedding per ArcFace
     model = GNNCWT2D_Mk11_1sec_Arc(19, (40, 500), embedding_size)
     model.to(device)
-    class_weights = torch.tensor([1.0, 3.0, 1.0], device=device)
     loss_fn = ArcFaceLoss(num_classes=num_classes,
                       embedding_size=embedding_size,
                       margin=0.5,      
                       scale=40,
-                      class_weights=class_weights,
                       easy_margin=True)
 
     #loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_size=embedding_size)
