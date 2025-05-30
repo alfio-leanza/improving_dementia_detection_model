@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 import matplotlib.pyplot as plt
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from models import *
+from model_arcface import *
 from pytorch_metric_learning.losses import ArcFaceLoss # NEW
 
 """
@@ -82,18 +82,33 @@ def evaluate_and_save(model, dataset_df, dataset_obj,
         f.write(report_txt)
 
     cm = confusion_matrix(gt_array, pred_array)
-    plt.figure(figsize=(6, 6))
-    plt.imshow(cm, interpolation='nearest')
-    plt.title(f'Confusion Matrix - {set_name.title()}')
-    plt.xlabel('Predicted'); plt.ylabel('True')
-    plt.colorbar()
+    class_names = ['hc', 'ftd', 'ad'] if cm.shape[0] == 3 else [str(i) for i in range(cm.shape[0])]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    im = ax.imshow(cm, cmap='Blues')
+    cbar = fig.colorbar(im, fraction=0.046, pad=0.04)
+    cbar.ax.set_ylabel('N° campioni', rotation=-90, va="bottom")
+
+    # tick & label
+    ax.set_xticks(np.arange(len(class_names)))
+    ax.set_yticks(np.arange(len(class_names)))
+    ax.set_xticklabels(class_names)
+    ax.set_yticklabels(class_names)
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('True')
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+    # testo nelle celle
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
-            plt.text(j, i, str(cm[i, j]), ha='center', va='center')
+            ax.text(j, i, f'{cm[i, j]}', ha='center', va='center',
+                    color='white' if cm[i, j] > cm.max()*0.6 else 'black')
+
+    ax.set_title(f'Confusion Matrix - {set_name.title()}')
     plt.tight_layout()
-    plt.savefig(os.path.join(results_dir,
-                f"{set_name}_confusion_matrix.png"))
-    plt.close()
+    plt.savefig(os.path.join(results_dir, f"{set_name}_confusion_matrix.png"))
+    plt.close(fig)
+
 
     pd.DataFrame(inference_rows).to_csv(
         os.path.join(results_dir, f"{set_name}_inferences.csv"),
@@ -312,10 +327,18 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
     num_classes = args.classes.count('-') + 1
-    model = GNNCWT2D_Mk11_1sec(19, (40, 500), num_classes)
+    model = GNNCWT2D_Mk11_1sec_Arc(19, (40, 500), num_classes)
     model.to(device)
     embedding_size = num_classes                     # dimensione embedding per ArcFace
-    loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_size=embedding_size)
+    class_weights = torch.tensor([1.0, 3.0, 1.0], device=device)
+    loss_fn = ArcFaceLoss(num_classes=num_classes,
+                      embedding_size=128,
+                      margin=0.5,      
+                      scale=40,
+                      class_weights=class_weights,
+                      easy_margin=True)
+
+    #loss_fn = ArcFaceLoss(num_classes=num_classes, embedding_size=embedding_size)
     # include i pesi del modello + quelli interni a ArcFaceLoss
     parameters = list(model.parameters()) + list(loss_fn.parameters())
     optimizer   = torch.optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
