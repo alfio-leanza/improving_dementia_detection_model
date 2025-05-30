@@ -7,7 +7,7 @@ from torch_geometric.nn import GraphConv, global_max_pool
 from torch_geometric.nn.norm import BatchNorm as PyGBatchNorm
 
 
-__all__ = ["GNNCWT2D_Mk11_1sec"]
+__all__ = ["GNNCWT2D_Mk11_1sec_Arc"]
 
 
 class _EdgeWeightsGraphConvLayer_Arc(Module):

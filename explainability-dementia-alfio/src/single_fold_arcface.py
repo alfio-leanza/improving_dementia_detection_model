@@ -327,12 +327,12 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
     num_classes = args.classes.count('-') + 1
-    model = GNNCWT2D_Mk11_1sec_Arc(19, (40, 500), num_classes)
+    embedding_size = 128                     # dimensione embedding per ArcFace
+    model = GNNCWT2D_Mk11_1sec_Arc(19, (40, 500), embedding_size)
     model.to(device)
-    embedding_size = num_classes                     # dimensione embedding per ArcFace
     class_weights = torch.tensor([1.0, 3.0, 1.0], device=device)
     loss_fn = ArcFaceLoss(num_classes=num_classes,
-                      embedding_size=128,
+                      embedding_size=embedding_size,
                       margin=0.5,      
                       scale=40,
                       class_weights=class_weights,
