@@ -48,24 +48,24 @@ class GNNCWT2D_Mk11_1sec_Arc(Module):
 
         self.lin2  = Linear(800, 512)
         self.bn3   = BatchNorm1d(n_electrodes)
-        self.drop3 = Dropout(p=0.2)
+        self.drop3 = Dropout(p=0.3)
 
         self.lin3  = Linear(512, 256)
         self.bn4   = BatchNorm1d(n_electrodes)
-        self.drop4 = Dropout(p=0.2)
+        self.drop4 = Dropout(p=0.3)
 
         self.lin4  = Linear(256, 128)
         self.bn5   = BatchNorm1d(n_electrodes)
-        self.drop5 = Dropout(p=0.2)
+        self.drop5 = Dropout(p=0.3)
 
         # graph operations on node-level features
         self.gconv1 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 128, 64)
         self.bn6    = BatchNorm1d(64)
-        self.drop6  = Dropout(p=0.2)
+        self.drop6  = Dropout(p=0.3)
 
         self.gconv2 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 64, 64)
         self.bn7    = BatchNorm1d(64)
-        self.drop7  = Dropout(p=0.2)
+        self.drop7  = Dropout(p=0.3)
 
         # graph-level projection to embedding space
         self.lin5 = Linear(64, 32)
