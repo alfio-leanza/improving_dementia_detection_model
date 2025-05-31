@@ -349,7 +349,7 @@ def main():
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
-    embedding_size = 128                     # dimensione embedding per ArcFace
+    embedding_size = 32                     # dimensione embedding per ArcFace
     model = GNNCWT2D_Mk11_1sec_Arc(19, (40, 500), embedding_size)
     model.to(device)
     loss_fn = ArcFaceLoss(num_classes=num_classes,
