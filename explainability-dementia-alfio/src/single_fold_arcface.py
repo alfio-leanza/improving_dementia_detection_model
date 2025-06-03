@@ -27,6 +27,31 @@ This is a copy of kfold_crossval.py made to work with a single custom fold (Milt
 Subject idxs are hacked into the code instead of using StratifiedKFold or LeaveOneOut.
 """
 
+# -------- time / freq shift (asse freq=-2, time=-1) ----------------------
+def rand_time_freq_shift(tensor,
+                         max_time_shift: int = 25,
+                         max_freq_shift: int = 3):
+    """
+    tensor: torch.Tensor shape (F, T, 19) oppure (19, F, T).
+    Riconosce automaticamente se l'asse elettrodi è in prima o terza pos.
+    """
+    if tensor.dim() != 3:
+        return tensor
+    # se elettrodi stanno in axis 0 → (19, F, T) → trasponi per agire su F,T
+    electrodes_first = (tensor.shape[0] == 19)
+    if electrodes_first:
+        tensor = tensor.permute(1, 2, 0)  # (F,T,19)
+
+    t_shift = torch.randint(-max_time_shift, max_time_shift + 1, (1,)).item()
+    f_shift = torch.randint(-max_freq_shift, max_freq_shift + 1, (1,)).item()
+    tensor  = torch.roll(tensor, shifts=t_shift, dims=1)   # time
+    tensor  = torch.roll(tensor, shifts=f_shift, dims=0)   # freq
+
+    if electrodes_first:
+        tensor = tensor.permute(2, 0, 1)  # back to (19,F,T)
+
+    return tensor
+
 def compute_print_metrics(gt_array, pred_array):
     acc = accuracy_score(gt_array, pred_array)
     class_report = classification_report(gt_array, pred_array)
@@ -319,7 +344,7 @@ def main():
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
 
-    train_dataset = CWTGraphDataset(train_df, crop_data_path, None)
+    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = rand_time_freq_shift)
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None)
 
@@ -345,7 +370,7 @@ def main():
         replacement=True
     )
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False, sampler = sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
