@@ -251,14 +251,8 @@ def compute_print_metrics(gt_array, pred_array):
 
     return avg_loss, epoch_acc'''
 
-def train_one_epoch(model,
-                    loader,
-                    device,
-                    optimizer,
-                    loss_fn,
-                    epoch: int,
-                    scheduler=None,
-                    writer=None):
+def train_one_epoch(model, loader, device, optimizer,
+                    loss_fn, epoch, scheduler=None, writer=None):
     """
     Training con FGM: loss totale = (1-α)·loss_clean + α·loss_adv
     """
