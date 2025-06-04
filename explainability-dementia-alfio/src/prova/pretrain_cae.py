@@ -14,9 +14,8 @@ DS_PARENT_DIR = "/home/tom/dataset_eeg"
 DS_NAME       = "miltiadous_deriv_uV_d1.0s_o0.5s"
 CLASSES       = "hc-ftd-ad"    # oppure "hc-ad"
 
-CWT_DIR   = os.path.join(DS_PARENT_DIR, DS_NAME, "cwt")
-ANNOT_CSV = os.path.join(DS_PARENT_DIR, DS_NAME,
-                         f"annot_all_{CLASSES}.csv")
+CWT_DIR   = '/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt'
+ANNOT_CSV = '/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/annot_all_hc-ftd-ad.csv'
 
 # ─────────────── iperparametri ───────────────────
 device      = "cuda" if torch.cuda.is_available() else "cpu"
