@@ -11,7 +11,7 @@ class CAE_RNN(nn.Module):
     """
     def __init__(self,
                  emb_dim: int = 128,
-                 rnn_hidden: int = 256,
+                 rnn_hidden: int = 128,
                  num_layers: int = 2,
                  bidirectional: bool = True,
                  freeze_encoder: bool = True):

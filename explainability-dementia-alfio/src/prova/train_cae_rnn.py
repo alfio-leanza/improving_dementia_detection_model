@@ -53,7 +53,7 @@ model.encoder.load_state_dict(torch.load("/home/alfio/improving_dementia_detecti
 
 criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.0,2.0,1.2]).to(device))
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad,
-                                    model.parameters()), lr=3e-4)
+                                    model.parameters()), lr=3e-4, weight_decay= 1e-4)
 
 # ───────────── training loop semplice ────────────
 epochs = 60
