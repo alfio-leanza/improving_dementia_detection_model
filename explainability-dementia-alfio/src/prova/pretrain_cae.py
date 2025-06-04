@@ -5,7 +5,7 @@ Salva l’encoder in encoder_cae.pth.
 
 import os, torch, pandas as pd
 from torch.utils.data import DataLoader
-from datasets import CWTGraphDataset
+from dataset_raw import CWTRawDataset 
 from model_cae import CAE
 from tqdm import tqdm
 
@@ -26,9 +26,10 @@ emb_dim     = 128
 
 # ─────────────── dataset e loader ────────────────
 annot_df = pd.read_csv(ANNOT_CSV)
-dataset  = CWTGraphDataset(annot_df, CWT_DIR, norm_stats_path=None)
+dataset  = CWTRawDataset(annot_df, CWT_DIR)
 loader   = DataLoader(dataset, batch_size=batch_size,
-                      shuffle=True, num_workers=4)
+                       shuffle=True, num_workers=4,
+                       pin_memory=False)
 
 # ─────────────── modello CAE ─────────────────────
 model = CAE(emb_dim=emb_dim).to(device)
