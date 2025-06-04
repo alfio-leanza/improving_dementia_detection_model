@@ -11,7 +11,7 @@ from tqdm import tqdm
 from sklearn.metrics import accuracy_score, classification_report
 
 # ─────────────── percorsi dataset ────────────────
-DS_PARENT_DIR = "local/datasets"
+DS_PARENT_DIR = "/home/tom/datasets"
 DS_NAME       = "miltiadous_deriv_uV_d1.0s_o0.5s"
 CLASSES       = "hc-ftd-ad"
 
@@ -35,8 +35,8 @@ val_df   = annot_df[annot_df['original_rec'].isin(val_subjects)]
 
 # ───────────── loader sequenziali ────────────────
 seq_len     = 8
-batch_size  = 16
-num_workers = 4
+batch_size  = 64
+num_workers = 8
 
 train_ds = CWTSequenceDataset(train_df, CWT_DIR, seq_len)
 val_ds   = CWTSequenceDataset(val_df,   CWT_DIR, seq_len)
@@ -49,7 +49,7 @@ val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False,
 # ───────────── modello + encoder pretrain ────────
 device   = "cuda" if torch.cuda.is_available() else "cpu"
 model    = CAE_RNN(emb_dim=128, freeze_encoder=True).to(device)
-model.encoder.load_state_dict(torch.load("checkpoints/encoder_cae.pth",
+model.encoder.load_state_dict(torch.load("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/src/prova/checkpoints/encoder_cae.pth",
                                          map_location=device))
 
 criterion = torch.nn.CrossEntropyLoss(weight=torch.tensor([1.0,2.0,1.2]).to(device))
@@ -61,34 +61,46 @@ epochs = 60
 for ep in range(epochs):
     model.train()
     y_true_tr, y_pred_tr = [], []
-    for x_seq, y in tqdm(train_loader, desc=f"Train {ep}"):
-        x_seq, y = x_seq.to(device), y.to(device)
 
-        logits = model(x_seq)
-        loss = criterion(logits, y)
+    with tqdm(train_loader,
+              total=len(train_loader),
+              desc=f"[Train] Ep {ep+1}/{epochs}",
+              unit="batch",
+              dynamic_ncols=True) as pbar:
+        for x_seq, y in pbar:
+            x_seq, y = x_seq.to(device), y.to(device)
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            logits = model(x_seq)
+            loss = criterion(logits, y)
 
-        y_true_tr.extend(y.cpu().tolist())
-        y_pred_tr.extend(logits.argmax(1).cpu().tolist())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-    tr_acc = accuracy_score(y_true_tr, y_pred_tr)
-    print(f"Epoch {ep:02d}  train acc {tr_acc:.3f}")
+            pred = logits.argmax(1)
+            y_true_tr.extend(y.cpu().tolist())
+            y_pred_tr.extend(pred.cpu().tolist())
+
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
     # ── validation ──
     model.eval()
     y_true_val, y_pred_val = [], []
     with torch.no_grad():
-        for x_seq, y in val_loader:
+        for x_seq, y in tqdm(val_loader,
+                             desc=f"[Val ] Ep {ep+1}/{epochs}",
+                             unit="batch",
+                             leave=False,
+                             dynamic_ncols=True):
             x_seq, y = x_seq.to(device), y.to(device)
             logits = model(x_seq)
+
             y_true_val.extend(y.cpu().tolist())
             y_pred_val.extend(logits.argmax(1).cpu().tolist())
 
+    tr_acc  = accuracy_score(y_true_tr,  y_pred_tr)
     val_acc = accuracy_score(y_true_val, y_pred_val)
-    print(f"            val   acc {val_acc:.3f}")
+    print(f"Epoch {ep+1:02d}/{epochs}  train-acc {tr_acc:.3f}  val-acc {val_acc:.3f}")
     if ep % 10 == 0:
         print(classification_report(y_true_val, y_pred_val,
                                     target_names=['hc','ftd','ad']))

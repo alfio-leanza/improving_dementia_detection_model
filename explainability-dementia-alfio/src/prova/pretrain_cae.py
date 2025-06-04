@@ -10,7 +10,7 @@ from model_cae import CAE
 from tqdm import tqdm
 
 # ─────────────── percorsi dataset ────────────────
-DS_PARENT_DIR = "local/datasets"
+DS_PARENT_DIR = "/home/tom/datasets"
 DS_NAME       = "miltiadous_deriv_uV_d1.0s_o0.5s"
 CLASSES       = "hc-ftd-ad"    # oppure "hc-ad"
 
@@ -38,20 +38,27 @@ optim = torch.optim.Adam(model.parameters(), lr=lr)
 for ep in range(epochs):
     model.train()
     epoch_loss = 0
-    for data in tqdm(loader, desc=f"Pretrain epoch {ep}"):
-        x = data.x.view(-1, 19, 40, 500).to(device)   # (B,19,40,500)
 
-        optim.zero_grad()
-        x_hat, _ = model(x)
-        loss = torch.nn.functional.mse_loss(x_hat, x)
-        loss.backward()
-        optim.step()
+    with tqdm(loader,
+              total=len(loader),
+              desc=f"[CAE] Epoch {ep+1}/{epochs}",
+              unit="batch",
+              dynamic_ncols=True) as pbar:
+        for data in pbar:
+            x = data.x.view(-1, 19, 40, 500).to(device)
 
-        epoch_loss += loss.item()
+            optim.zero_grad()
+            x_hat, _ = model(x)
+            loss = torch.nn.functional.mse_loss(x_hat, x)
+            loss.backward()
+            optim.step()
 
-    print(f"Epoch {ep:02d}  MSE: {epoch_loss/len(loader):.4f}")
+            epoch_loss += loss.item()
+            pbar.set_postfix({"mse": f"{loss.item():.4f}"})
+
+    print(f"Epoch {ep+1:02d}/{epochs}  avg-MSE: {epoch_loss/len(loader):.4f}")
 
 # ─────────────── salva encoder ───────────────────
 os.makedirs("checkpoints", exist_ok=True)
-torch.save(model.encoder.state_dict(), "checkpoints/encoder_cae.pth")
+torch.save(model.encoder.state_dict(), "/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/src/prova/checkpoints/encoder_cae.pth")
 print("Encoder salvato in checkpoints/encoder_cae.pth")
