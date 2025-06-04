@@ -41,9 +41,9 @@ train_ds = CWTSequenceDataset(train_df, CWT_DIR, seq_len)
 val_ds   = CWTSequenceDataset(val_df,   CWT_DIR, seq_len)
 
 train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                          num_workers=num_workers, pin_memory=True)
+                          num_workers=num_workers, pin_memory=False)
 val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False,
-                          num_workers=num_workers, pin_memory=True)
+                          num_workers=num_workers, pin_memory=False)
 
 # ───────────── modello + encoder pretrain ────────
 device   = "cuda" if torch.cuda.is_available() else "cpu"
