@@ -45,6 +45,8 @@ class CWTDecoder(nn.Module):
     def forward(self, z):
         x = self.fc(z).view(-1, 128, 1, 1)
         x = self.deconv(x)
+        x = F.interpolate(x, size=(40, 500),
+                          mode='bilinear', align_corners=False)
         return x
 
 
