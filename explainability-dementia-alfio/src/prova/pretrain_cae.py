@@ -45,7 +45,7 @@ for ep in range(epochs):
               unit="batch",
               dynamic_ncols=True) as pbar:
         for data in pbar:
-            x = data.x.view(-1, 19, 40, 500).to(device)
+            x = data.to(device)
 
             optim.zero_grad()
             x_hat, _ = model(x)
