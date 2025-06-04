@@ -265,7 +265,7 @@ def train_one_epoch(model,
     loss_fn.train()
     running_loss, num_samples, correct = 0.0, 0, 0
 
-    for data in loader:
+    for data in tqdm(loader, ncols=100, desc = 'Train'):
         data = data.to(device)
         data.x.requires_grad_(True)
 
