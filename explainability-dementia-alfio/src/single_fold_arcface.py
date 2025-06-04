@@ -27,30 +27,11 @@ This is a copy of kfold_crossval.py made to work with a single custom fold (Milt
 Subject idxs are hacked into the code instead of using StratifiedKFold or LeaveOneOut.
 """
 
-# -------- time / freq shift (asse freq=-2, time=-1) ----------------------
-def rand_time_freq_shift(tensor,
-                         max_time_shift: int = 25,
-                         max_freq_shift: int = 3):
-    """
-    tensor: torch.Tensor shape (F, T, 19) oppure (19, F, T).
-    Riconosce automaticamente se l'asse elettrodi è in prima o terza pos.
-    """
-    if tensor.dim() != 3:
-        return tensor
-    # se elettrodi stanno in axis 0 → (19, F, T) → trasponi per agire su F,T
-    electrodes_first = (tensor.shape[0] == 19)
-    if electrodes_first:
-        tensor = tensor.permute(1, 2, 0)  # (F,T,19)
-
-    t_shift = torch.randint(-max_time_shift, max_time_shift + 1, (1,)).item()
-    f_shift = torch.randint(-max_freq_shift, max_freq_shift + 1, (1,)).item()
-    tensor  = torch.roll(tensor, shifts=t_shift, dims=1)   # time
-    tensor  = torch.roll(tensor, shifts=f_shift, dims=0)   # freq
-
-    if electrodes_first:
-        tensor = tensor.permute(2, 0, 1)  # back to (19,F,T)
-
-    return tensor
+# ────────────────────────────────────────────────────────────────
+# Parametri FGM (adversarial data augmentation)
+ADV_EPS   = 1e-2   # ampiezza perturbazione rispetto alla norma L2
+ADV_ALPHA = 0.5    # quanto pesa la loss adversarial sul totale
+# ────────────────────────────────────────────────────────────────
 
 def compute_print_metrics(gt_array, pred_array):
     acc = accuracy_score(gt_array, pred_array)
@@ -238,7 +219,7 @@ def compute_print_metrics(gt_array, pred_array):
     print(cm)
 
 
-def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn):
+'''def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn):
     model.train()
     running_loss = 0.0
     correct = 0
@@ -268,8 +249,68 @@ def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn)
     tb_writer.add_scalar('Loss/train', avg_loss, epoch)
     tb_writer.add_scalar('Accuracy/train', epoch_acc, epoch)
 
-    return avg_loss, epoch_acc
+    return avg_loss, epoch_acc'''
 
+def train_one_epoch(model,
+                    loader,
+                    device,
+                    optimizer,
+                    loss_fn,
+                    epoch: int,
+                    scheduler=None,
+                    writer=None):
+    """
+    Training con FGM: loss totale = (1-α)·loss_clean + α·loss_adv
+    """
+    model.train(); loss_fn.train()
+    running_loss, num_samples = 0.0, 0
+    correct = 0
+
+    for data in loader:
+        data = data.to(device)
+        data.x.requires_grad_(True)
+
+        # ---------- forward "clean" ------------------------------------
+        embeds_clean = model(data.x, data.edge_index, data.batch)
+        loss_clean   = loss_fn(embeds_clean, data.y)
+        loss_clean.backward(retain_graph=True)      # ∇_x L per FGM
+
+        # ---------- perturbazione FGM ----------------------------------
+        grad = data.x.grad
+        norm = torch.norm(grad, p=2) + 1e-8
+        delta = ADV_EPS * grad / norm
+        x_adv = (data.x + delta).detach()
+
+        # ---------- forward "avversario" --------------------------------
+        embeds_adv = model(x_adv, data.edge_index, data.batch)
+        loss_adv   = loss_fn(embeds_adv, data.y)
+
+        # ---------- loss totale + update --------------------------------
+        loss = (1 - ADV_ALPHA) * loss_clean + ADV_ALPHA * loss_adv
+
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+        # ---------- metriche -------------------------------------------
+        logits = loss_fn.get_logits(embeds_clean).detach()
+        preds  = torch.argmax(logits, dim=1)
+        correct += int((preds == data.y).sum())
+
+        running_loss += loss.item() * data.y.size(0)
+        num_samples  += data.y.size(0)
+
+    if scheduler is not None:
+        scheduler.step()
+
+    epoch_loss = running_loss / num_samples
+    epoch_acc  = correct / num_samples
+
+    if writer is not None:
+        writer.add_scalar("Loss/train", epoch_loss, epoch)
+        writer.add_scalar("Accuracy/train", epoch_acc,  epoch)
+
+    return epoch_loss, epoch_acc
 
 
 def val_one_epoch(model, epoch, tb_writer, loader, device, loss_fn, testing=False):
@@ -344,7 +385,7 @@ def main():
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
 
-    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = rand_time_freq_shift)
+    train_dataset = CWTGraphDataset(train_df, crop_data_path, None)
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None)
 
