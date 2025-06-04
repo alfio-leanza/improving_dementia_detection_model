@@ -15,7 +15,7 @@ class CWTSequenceDataset(Dataset):
         # raggruppa per soggetto e ordina per start_sample
         windows = []
         for rec_id, group in annot_df.groupby('original_rec'):
-            g = group.sort_values('start_sample')
+            g = group.sort_values('crop_start_sample')
             files  = g['crop_file'].tolist()
             labels = g['label'].tolist()
             for i in range(0, len(files) - seq_len + 1):
