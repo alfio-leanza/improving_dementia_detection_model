@@ -251,14 +251,19 @@ def compute_print_metrics(gt_array, pred_array):
 
     return avg_loss, epoch_acc'''
 
-def train_one_epoch(model, loader, device, optimizer,
-                    loss_fn, epoch, scheduler=None, writer=None):
+def train_one_epoch(model,
+                    epoch,           
+                    tb_writer,       
+                    loader,          
+                    device,          
+                    optimizer,       
+                    loss_fn):       
     """
     Training con FGM: loss totale = (1-α)·loss_clean + α·loss_adv
     """
-    model.train(); loss_fn.train()
-    running_loss, num_samples = 0.0, 0
-    correct = 0
+    model.train()
+    loss_fn.train()
+    running_loss, num_samples, correct = 0.0, 0, 0
 
     for data in loader:
         data = data.to(device)
@@ -270,8 +275,8 @@ def train_one_epoch(model, loader, device, optimizer,
         loss_clean.backward(retain_graph=True)      # ∇_x L per FGM
 
         # ---------- perturbazione FGM ----------------------------------
-        grad = data.x.grad
-        norm = torch.norm(grad, p=2) + 1e-8
+        grad  = data.x.grad
+        norm  = torch.norm(grad, p=2) + 1e-8
         delta = ADV_EPS * grad / norm
         x_adv = (data.x + delta).detach()
 
@@ -294,15 +299,13 @@ def train_one_epoch(model, loader, device, optimizer,
         running_loss += loss.item() * data.y.size(0)
         num_samples  += data.y.size(0)
 
-    if scheduler is not None:
-        scheduler.step()
-
     epoch_loss = running_loss / num_samples
     epoch_acc  = correct / num_samples
 
-    if writer is not None:
-        writer.add_scalar("Loss/train", epoch_loss, epoch)
-        writer.add_scalar("Accuracy/train", epoch_acc,  epoch)
+    # ---------- logging TensorBoard ------------------------------------
+    if tb_writer is not None:
+        tb_writer.add_scalar("Loss/train",     epoch_loss, epoch)
+        tb_writer.add_scalar("Accuracy/train", epoch_acc,  epoch)
 
     return epoch_loss, epoch_acc
 
