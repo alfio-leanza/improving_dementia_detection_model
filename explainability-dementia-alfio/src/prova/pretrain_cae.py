@@ -10,7 +10,7 @@ from model_cae import CAE
 from tqdm import tqdm
 
 # ─────────────── percorsi dataset ────────────────
-DS_PARENT_DIR = "/home/tom/datasets"
+DS_PARENT_DIR = "/home/tom/dataset_eeg"
 DS_NAME       = "miltiadous_deriv_uV_d1.0s_o0.5s"
 CLASSES       = "hc-ftd-ad"    # oppure "hc-ad"
 
