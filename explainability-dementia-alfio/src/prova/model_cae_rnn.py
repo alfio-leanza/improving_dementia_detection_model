@@ -26,11 +26,15 @@ class CAE_RNN(nn.Module):
             hidden_size  = rnn_hidden,
             num_layers   = num_layers,
             batch_first  = True,
-            bidirectional= bidirectional
+            bidirectional= bidirectional,
+            dropout = 0.3
         )
 
         factor = 2 if bidirectional else 1
-        self.head = nn.Linear(rnn_hidden * factor, 3)
+        self.head = nn.Sequential(
+                        nn.Dropout(0.4),                # <── dropout sul vettore hidden finale
+                        nn.Linear(rnn_hidden * factor, 3)
+)
 
     def forward(self, x_seq):   # x_seq (B, T, 19, 40, 500)
         B, T = x_seq.size(0), x_seq.size(1)
