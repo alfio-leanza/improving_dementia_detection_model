@@ -30,7 +30,7 @@ def normalize_eeg(eeg, eeg_mean, eeg_std):
 
 
 class CWTGraphDataset(Dataset):
-    def __init__(self, annot_df, dataset_crop_path, norm_stats_path, augment = None):
+    def __init__(self, annot_df, dataset_crop_path, norm_stats_path):
         super().__init__()
         self.annot_df = annot_df
         self.dataset_crop_path = dataset_crop_path
@@ -42,7 +42,6 @@ class CWTGraphDataset(Dataset):
             self.norm_mean = None
             self.norm_std = None
             self.scaler = StandardScaler()
-            self.augment = augment # new
 
     def len(self):
         # torch_geometric.data.Dataset objects are peculiar.
@@ -71,9 +70,6 @@ class CWTGraphDataset(Dataset):
             orig_shape = cwt.shape
             norm_cwt = self.scaler.fit_transform(np.reshape(cwt, (-1, 1)))
             norm_cwt = np.reshape(norm_cwt, orig_shape).astype(np.float32)
-        
-        if self.augment is not None: # new
-            norm_cwt = self.augment(torch.tensor(norm_cwt)).numpy() # new
 
 
         # Miltiadous electrodes:
