@@ -30,7 +30,7 @@ Subject idxs are hacked into the code instead of using StratifiedKFold or LeaveO
 
 def filter_artifacts(df, crops_dir,
                      blink_thr=8.0, emg_thr=5.0,
-                     line_thr=6.0, spike_thr=8.0):
+                     line_thr=8.0, spike_thr=10.0):
     """
     Tiene solo i crop che PASSANO il test (no artefatto certo).
     Soglie volutamente alte → elimina solo i casi “senza dubbio”.
