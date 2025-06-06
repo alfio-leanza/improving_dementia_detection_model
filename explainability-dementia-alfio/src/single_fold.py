@@ -20,6 +20,7 @@ from utils import seed_everything, write_tboard_dict
 from datasets import *
 from models import *
 from artifact_utils import detect_artifact
+from single_fold_arcface import evaluate_and_save
 
 """
 This is a copy of kfold_crossval.py made to work with a single custom fold (Miltiadous).
@@ -211,6 +212,7 @@ def main():
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact/runs/train_{}'.format(session_timestamp))
     checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -387,6 +389,13 @@ def main():
     print('\n\n======================== AVG ========================')
     gt_array, pred_array = avg_pred_counter.get_arrays()
     compute_print_metrics(gt_array, pred_array)
+
+    evaluate_and_save(model, train_df, train_dataset, 'train',
+                    device, results_save_dir, loss_fn)
+    evaluate_and_save(model, val_df,   val_dataset,   'val',
+                    device, results_save_dir, loss_fn)
+    evaluate_and_save(model, test_df,  test_dataset,  'test',
+                    device, results_save_dir, loss_fn)
 
 
 if __name__ == "__main__":
