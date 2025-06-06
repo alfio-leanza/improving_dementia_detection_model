@@ -49,7 +49,7 @@ class GNNCWT2D_Mk11_1sec(Module):
         self.n_freq = cwt_size[0]
         self.n_time_samples = cwt_size[1]
 
-        self.lin2 = Linear(512, 256) # prima 800,512
+        self.lin2 = Linear(800, 256) # prima 800,512
         self.bn3 = BatchNorm1d(n_electrodes)
         self.drop3 = Dropout(p=0.2)
         self.lin3 = Linear(256, 128) # prima 512,256
