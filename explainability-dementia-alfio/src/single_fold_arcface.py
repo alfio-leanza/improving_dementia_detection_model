@@ -72,7 +72,11 @@ def evaluate_and_save(model, dataset_df, dataset_obj,
         with torch.no_grad():
             embeds  = model(data.x, data.edge_index, torch.zeros(19,
                              dtype=torch.int64, device=device))
-            logits_t = loss_fn.get_logits(embeds)
+                # ── supporto ArcFace vs CrossEntropy ───────────────
+            if hasattr(loss_fn, "get_logits"):          # ArcFace
+                logits_t = loss_fn.get_logits(embeds)
+            else:                                       # CrossEntropy, Focal…
+                logits_t = embeds                       # output già logits
 
         logits    = np.squeeze(logits_t.cpu().numpy())
         soft_vals = softmax(logits)

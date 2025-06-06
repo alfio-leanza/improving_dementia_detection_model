@@ -10,3 +10,5 @@ python3 src/single_fold.py \
     --batch_size 256 \
     --num_workers 8 \
     --num_epochs 80 \
+    --weight_decay 1e-7 \
+
