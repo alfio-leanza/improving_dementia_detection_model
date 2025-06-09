@@ -210,9 +210,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact_all/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact_all/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact_all/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -246,7 +246,11 @@ def main():
     train_df = filter_artifacts(train_df, crop_data_path)   # <── PATCH
     print(f"Crop puliti (train): {len(train_df)}")
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
+    val_df = filter_artifacts(val_df, crop_data_path)   # <── PATCH
+    print(f"Crop puliti (validation): {len(val_df)}")
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
+    test_df = filter_artifacts(test_df, crop_data_path)   # <── PATCH
+    print(f"Crop puliti (test): {len(test_df)}")
 
     train_dataset = CWTGraphDataset(train_df, crop_data_path, None)
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
