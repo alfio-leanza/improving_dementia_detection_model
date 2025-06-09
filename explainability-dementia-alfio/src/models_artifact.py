@@ -49,22 +49,22 @@ class GNNCWT2D_Mk11_1sec(Module):
         self.n_freq = cwt_size[0]
         self.n_time_samples = cwt_size[1]
 
-        self.lin2 = Linear(800, 512) 
+        self.lin2 = Linear(800, 256) # prima 800,512
         self.bn3 = BatchNorm1d(n_electrodes)
-        self.drop3 = Dropout(p=0.2)  
-        self.lin3 = Linear(512, 256)
+        self.drop3 = Dropout(p=0.3) # prima 0.2 
+        self.lin3 = Linear(256, 128) # prima 512,256
         self.bn4 = BatchNorm1d(n_electrodes)
-        self.drop4 = Dropout(p=0.2) 
-        self.lin4 = Linear(256, 128) 
-        self.bn5 = BatchNorm1d(n_electrodes)
-        self.drop5 = Dropout(p=0.2) 
+        self.drop4 = Dropout(p=0.3) # prima 0.2
+        #self.lin4 = Linear(128, 64) # prima 256,128
+        #self.bn5 = BatchNorm1d(n_electrodes)
+        #self.drop5 = Dropout(p=0.3) # prima 0.2
         # graph operations on node-level features
-        self.gconv1 = _EdgeWeightsGraphConvLayer(60, 'ones', 128, 64) 
-        self.bn6 = BatchNorm1d(64) 
-        self.drop6 = Dropout(p=0.2) 
-        self.gconv2 = _EdgeWeightsGraphConvLayer(60, 'ones', 64, 64) 
-        self.bn7 = BatchNorm1d(64) 
-        self.drop7 = Dropout(p=0.2)
+        self.gconv1 = _EdgeWeightsGraphConvLayer(60, 'ones', 128, 64) # prima  128,64
+        self.bn6 = BatchNorm1d(32) # prima 64
+        self.drop6 = Dropout(p=0.3) # prima 0.2
+        self.gconv2 = _EdgeWeightsGraphConvLayer(60, 'ones', 128, 64) # prima 64,64
+        self.bn7 = BatchNorm1d(32) # prima 64
+        self.drop7 = Dropout(p=0.3) # prima 0.2
         # graph operations on graph-level features
         self.lin5 = Linear(64, 32)
         self.lin6 = Linear(32, num_classes)
@@ -96,11 +96,11 @@ class GNNCWT2D_Mk11_1sec(Module):
         # torch.Size([64, 19, 256])
         x = self.bn4(x)
         x = self.drop4(x)
-        x = self.lin4(x)
+        #x = self.lin4(x)
         x = F.relu(x)
         # torch.Size([64, 19, 128])
-        x = self.bn5(x)
-        x = self.drop5(x)
+        #x = self.bn5(x)
+        #x = self.drop5(x)
         x = x.view(actual_batch_size*self.n_electrodes, -1)
         # torch.Size([1216, 128])
 

@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from models import *
+from models_artifact import *
 from artifact_utils import detect_artifact
 from single_fold_arcface import evaluate_and_save
 
