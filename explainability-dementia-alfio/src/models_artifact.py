@@ -60,10 +60,10 @@ class GNNCWT2D_Mk11_1sec(Module):
         #self.drop5 = Dropout(p=0.3) # prima 0.2
         # graph operations on node-level features
         self.gconv1 = _EdgeWeightsGraphConvLayer(60, 'ones', 128, 64) # prima  128,64
-        self.bn6 = BatchNorm1d(32) # prima 64
+        self.bn6 = BatchNorm1d(64) # prima 64
         self.drop6 = Dropout(p=0.3) # prima 0.2
-        self.gconv2 = _EdgeWeightsGraphConvLayer(60, 'ones', 128, 64) # prima 64,64
-        self.bn7 = BatchNorm1d(32) # prima 64
+        self.gconv2 = _EdgeWeightsGraphConvLayer(60, 'ones', 64, 64) # prima 64,64
+        self.bn7 = BatchNorm1d(64) # prima 64
         self.drop7 = Dropout(p=0.3) # prima 0.2
         # graph operations on graph-level features
         self.lin5 = Linear(64, 32)
