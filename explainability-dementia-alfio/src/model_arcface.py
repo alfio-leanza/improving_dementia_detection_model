@@ -54,16 +54,16 @@ class GNNCWT2D_Mk11_1sec_Arc(Module):
         self.bn4   = BatchNorm1d(n_electrodes)
         self.drop4 = Dropout(p=0.2)
 
-        self.lin4  = Linear(256, 128)
-        self.bn5   = BatchNorm1d(n_electrodes)
-        self.drop5 = Dropout(p=0.2)
+        #self.lin4  = Linear(256, 128)
+        #self.bn5   = BatchNorm1d(n_electrodes)
+        #self.drop5 = Dropout(p=0.2)
 
         # graph operations on node-level features
-        self.gconv1 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 128, 64)
+        self.gconv1 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 256, 128)
         self.bn6    = BatchNorm1d(64)
         self.drop6  = Dropout(p=0.2)
 
-        self.gconv2 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 64, 64)
+        self.gconv2 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 128, 64)
         self.bn7    = BatchNorm1d(64)
         self.drop7  = Dropout(p=0.2)
 
@@ -81,7 +81,7 @@ class GNNCWT2D_Mk11_1sec_Arc(Module):
 
         x = F.relu(self.lin2(x));  x = self.drop3(self.bn3(x))
         x = F.relu(self.lin3(x));  x = self.drop4(self.bn4(x))
-        x = F.relu(self.lin4(x));  x = self.drop5(self.bn5(x))
+        #x = F.relu(self.lin4(x));  x = self.drop5(self.bn5(x))
         x = x.view(actual_bs * self.n_electrodes, -1)       # (B*19, 128)
 
         x = F.relu(self.gconv1(x, edge_index)); x = self.drop6(self.bn6(x))

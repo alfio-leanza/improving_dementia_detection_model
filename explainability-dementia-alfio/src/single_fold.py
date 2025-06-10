@@ -19,36 +19,12 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 from utils import seed_everything, write_tboard_dict
 from datasets import *
 from models_artifact import *
-from artifact_utils import detect_artifact
 from single_fold_arcface import evaluate_and_save
 
 """
 This is a copy of kfold_crossval.py made to work with a single custom fold (Miltiadous).
 Subject idxs are hacked into the code instead of using StratifiedKFold or LeaveOneOut.
 """
-
-def filter_artifacts(df, crops_dir,
-                     blink_thr=8.0, emg_thr=5.0,
-                     line_thr=8.0, spike_thr=10.0):
-    """
-    Tiene solo i crop che PASSANO il test (no artefatto certo).
-    Soglie volutamente alte → elimina solo i casi “senza dubbio”.
-    """
-    keep_idx = []
-    for i, row in tqdm(df.iterrows(),
-                       total=len(df),
-                       desc="Artefact filter",
-                       ncols=100):
-        path = os.path.join(crops_dir, row['crop_file'])
-        cwt  = torch.tensor(np.load(path)).permute(2, 0, 1).float()  # (19,40,500)
-        if not detect_artifact(cwt,
-                               blink_thr=blink_thr,
-                               emg_thr=emg_thr,
-                               line_thr=line_thr,
-                               spike_thr=spike_thr):
-            keep_idx.append(i)           # crop pulito ⇒ lo teniamo
-    return df.loc[keep_idx]
-
 
 
 def argparser():
@@ -243,14 +219,8 @@ def main():
     test_subjects = ['sub-{:03d}'.format(s) for s in test_subjects]
 
     train_df = annotations[annotations['original_rec'].isin(train_subjects)]  # crops in train set
-    train_df = filter_artifacts(train_df, crop_data_path)   # <── PATCH
-    print(f"Crop puliti (train): {len(train_df)}")
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
-    val_df = filter_artifacts(val_df, crop_data_path)   # <── PATCH
-    print(f"Crop puliti (validation): {len(val_df)}")
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
-    test_df = filter_artifacts(test_df, crop_data_path)   # <── PATCH
-    print(f"Crop puliti (test): {len(test_df)}")
 
     train_dataset = CWTGraphDataset(train_df, crop_data_path, None)
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
@@ -401,6 +371,7 @@ def main():
     evaluate_and_save(model, test_df,  test_dataset,  'test',
                     device, results_save_dir, loss_fn)
 
+print('Finish')
 
 if __name__ == "__main__":
     main()
