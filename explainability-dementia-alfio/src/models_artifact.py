@@ -62,9 +62,9 @@ class GNNCWT2D_Mk11_1sec(Module):
         self.gconv1 = _EdgeWeightsGraphConvLayer(60, 'ones', 128, 64) # prima  128,64
         self.bn6 = BatchNorm1d(64) # prima 64
         self.drop6 = Dropout(p=0.3) # prima 0.2
-        self.gconv2 = _EdgeWeightsGraphConvLayer(60, 'ones', 64, 64) # prima 64,64
-        self.bn7 = BatchNorm1d(64) # prima 64
-        self.drop7 = Dropout(p=0.3) # prima 0.2
+        #self.gconv2 = _EdgeWeightsGraphConvLayer(60, 'ones', 64, 64) # prima 64,64
+        #self.bn7 = BatchNorm1d(64) # prima 64
+        #self.drop7 = Dropout(p=0.3) # prima 0.2
         # graph operations on graph-level features
         self.lin5 = Linear(64, 32)
         self.lin6 = Linear(32, num_classes)
@@ -109,11 +109,11 @@ class GNNCWT2D_Mk11_1sec(Module):
         # torch.Size([1216, 64])
         x = self.bn6(x)
         x = self.drop6(x)
-        x = self.gconv2(x, edge_index)
-        x = F.relu(x)
+        #x = self.gconv2(x, edge_index)
+        #x = F.relu(x)
         # torch.Size([1216, 64])
-        x = self.bn7(x)
-        x = self.drop7(x)
+        #x = self.bn7(x)
+        #x = self.drop7(x)
         x = global_max_pool(x, batch)
         # torch.Size([64, 64])
 
