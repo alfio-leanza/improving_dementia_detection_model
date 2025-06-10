@@ -60,7 +60,7 @@ class GNNCWT2D_Mk11_1sec_Arc(Module):
 
         # graph operations on node-level features
         self.gconv1 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 256, 128)
-        self.bn6    = BatchNorm1d(64)
+        self.bn6    = BatchNorm1d(128)
         self.drop6  = Dropout(p=0.2)
 
         self.gconv2 = _EdgeWeightsGraphConvLayer_Arc(60, 'ones', 128, 64)
