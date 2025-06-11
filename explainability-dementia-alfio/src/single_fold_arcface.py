@@ -37,27 +37,46 @@ def compute_print_metrics(gt_array, pred_array):
     print(cm)
 
 
-def evaluate_and_save(model, dataset_df, dataset_obj,
-                      set_name, device, results_dir, loss_fn):
-    """Valuta il modello e salva report, confusion matrix e CSV inferenze."""
+def evaluate_and_save(model,
+                      dataset_df,
+                      dataset_obj,
+                      set_name: str,
+                      device,
+                      results_dir: str,
+                      loss_fn=None):
+    """
+    Valuta il modello e salva report, confusion matrix e CSV inferenze.
+    Compatibile con:
+        • modello 3-head → tuple (log_main, log_bin, log_dem)
+        • modello singolo → logit tensor
+        • loss ArcFace (get_logits) oppure CE/Focal (no get_logits)
+    """
     model.eval()
     inference_rows, gt_array, pred_array = [], [], []
 
     for s in tqdm(range(len(dataset_df)), ncols=100,
                   desc=f"  {set_name.title()} Eval"):
         data = dataset_obj[s].to(device)
-        with torch.no_grad():
-            embeds  = model(data.x, data.edge_index, torch.zeros(19,
-                             dtype=torch.int64, device=device))
-                # ── supporto ArcFace vs CrossEntropy ───────────────
-            if hasattr(loss_fn, "get_logits"):          # ArcFace
-                logits_t = loss_fn.get_logits(embeds)
-            else:                                       # CrossEntropy, Focal…
-                logits_t = embeds                       # output già logits
 
-        logits    = np.squeeze(logits_t.cpu().numpy())
+        with torch.no_grad():
+            out = model(data.x, data.edge_index,
+                        torch.zeros(19, dtype=torch.int64, device=device))
+
+            # ----- estrai logits principali ----------------------------
+            if isinstance(out, tuple):          # modello a più teste
+                logits_main = out[0]            # head_main (3 classi)
+            else:
+                logits_main = out               # modello singolo
+
+            # ----- supporto ArcFace vs CE ------------------------------
+            if loss_fn is not None and hasattr(loss_fn, "get_logits"):
+                logits_t = loss_fn.get_logits(logits_main)
+            else:
+                logits_t = logits_main
+
+        logits = np.squeeze(logits_t.cpu().numpy())
         soft_vals = softmax(logits)
-        pred_lbl  = int(np.argmax(logits))
+        pred_lbl = int(np.argmax(logits))
 
         row = dataset_df.iloc[s]
         true_lbl = int(row.get('label', row.get('true_label', -1)))
