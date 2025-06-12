@@ -1,111 +1,195 @@
-import os, torch, argparse, csv
-import pandas as pd, numpy as np
+import os
+import ipdb
+import csv
+import torch
+import argparse
+import pandas as pd
+import numpy as np
+import numpy.typing as npt
 from tqdm import tqdm
 from datetime import datetime
 from scipy.special import softmax
-from sklearn.metrics import (classification_report, accuracy_score,
-                             confusion_matrix)
-import matplotlib.pyplot as plt                                       # NEW
-import torch.nn.functional as F
+from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
 from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 
-from utils import seed_everything
-from datasets import CWTGraphDataset
-from model_threehead import GNNCWT2D_Mk11_1sec_3H
+from utils import seed_everything, write_tboard_dict
+from datasets import *
+from model_threehead import *
+from single_fold_arcface import evaluate_and_save
 
-# ───────────────────────── parser ─────────────────────────
+"""
+This is a copy of kfold_crossval.py made to work with a single custom fold (Miltiadous).
+Subject idxs are hacked into the code instead of using StratifiedKFold or LeaveOneOut.
+"""
+
+
 def argparser():
-    p = argparse.ArgumentParser(..., formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('-n', '--ds_name',  required=True)
-    p.add_argument('-c', '--classes',  required=True)
-    p.add_argument('-p', '--ds_parent_dir', default='local/datasets/')
-    p.add_argument('-d', '--device',  default='cuda:0')
-    p.add_argument('-s', '--seed',    default=1234, type=int)
-    p.add_argument('-b', '--batch_size', default=64,  type=int)
-    p.add_argument('-w', '--num_workers', default=4, type=int)
-    p.add_argument('-e', '--num_epochs',  default=100, type=int)
-    p.add_argument('-r', '--lr', default=1e-5,  type=float)
-    p.add_argument('-y', '--weight_decay', default=1e-8, type=float)
-    p.set_defaults(debug=False); return p.parse_args()
+    parser = argparse.ArgumentParser(description='Fake K-Fold cross validation (single fold) for preprocessed data. Custom handmade splitting is performed', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    #parser.add_argument('-k', '--k', default=10, type=int, help='number of folds')
+    parser.add_argument('-n', '--ds_name', required=True, help='name of the preprocessed dataset')
+    parser.add_argument('-c', '--classes', required=True, help='classes to use expressed as in annot file names (e.g. \'hc-ad\')')
+    parser.add_argument('-p', '--ds_parent_dir', default='local/datasets/', help='parent directory of the preprocessed dataset')
+    parser.add_argument('-d', '--device', default='cuda:0', help='device for computations (cuda:0, cpu, etc.)')
+    parser.add_argument('-s', '--seed', default=1234, type=int, help='general reproducibility seed')
+    #parser.add_argument('-t', '--splitter_seed', default=69, type=int, help='kfold splitter seed')
+    parser.add_argument('-b', '--batch_size', default=64, type=int, help='training batch size')
+    parser.add_argument('-w', '--num_workers', default=4, type=int, help='number of workers for dataloaders')
+    parser.add_argument('-e', '--num_epochs', default=100, type=int, help='training epochs')
+    parser.add_argument('-r', '--lr', default=0.00001, type=float, help='training learning rate')
+    parser.add_argument('-y', '--weight_decay', default=1e-8, type=float, help='training weight decay')
+    parser.add_argument('-g', '--scheduler_gamma', default=0.98, type=float, help='exponential decay gamma')
+    #parser.add_argument('-l', '--loo', action='store_true', help='ignore k and apply leave-one-out cross-validation (k = # samples)')
+    parser.add_argument('--debug', action='store_true', help='do not produce artifacts (no tensorboard logs, no saved checkpoints, etc)')
+    #parser.set_defaults(loo=False)
+    parser.set_defaults(debug=False)
+    args = parser.parse_args()
+    return args
 
-# ───────────────────────── loss 3-head ─────────────────────
-def compute_loss_threehead(logA, logB, logC, y, l_bin=0.3, l_dem=0.3):
-    y_bin = (y != 0).long(); y_dem = (y - 1).clamp(min=0)
-    loss  = F.cross_entropy(logA, y)
-    loss += l_bin * F.cross_entropy(logB, y_bin)
-    mask = y_bin == 1
-    if mask.any():
-        loss += l_dem * F.cross_entropy(logC[mask], y_dem[mask])
-    return loss
 
-# ───────────────────────── train / val ─────────────────────
-def train_one_epoch(model, epoch, tb, loader, dev, optim):
-    model.train(); run, cor = 0., 0
-    for data in tqdm(loader, ncols=100, desc='  Train'):
-        data = data.to(dev); optim.zero_grad()
-        logA, logB, logC = model(data.x, data.edge_index, data.batch)
-        loss = compute_loss_threehead(logA, logB, logC, data.y,
-                                      model.lambda_bin, model.lambda_dem)
-        loss.backward(); optim.step()
-        run += loss.item(); cor += int((logA.argmax(1)==data.y).sum())
-    tb.add_scalar('Loss/train', run/len(loader), epoch)
-    tb.add_scalar('Accuracy/train', cor/len(loader.dataset), epoch)
-    return run/len(loader), cor/len(loader.dataset)
+class CropPredCounter:
+    """
+    Predictions counter for 'crop' eval mode.
+    """
+    def __init__(self):
+        self.gt_array = np.empty((0,), dtype=np.uint8)
+        self.pred_array = np.empty((0,), dtype=np.uint8)
 
-@torch.no_grad()
-def val_one_epoch(model, epoch, tb, loader, dev, tag='val'):
-    model.eval(); run, cor = 0., 0
-    for data in tqdm(loader, ncols=100, desc=f'  {tag.capitalize()}'):
-        data = data.to(dev)
-        logA, logB, logC = model(data.x, data.edge_index, data.batch)
-        run += compute_loss_threehead(logA, logB, logC, data.y,
-                                      model.lambda_bin, model.lambda_dem).item()
-        cor += int((logA.argmax(1) == data.y).sum())
-    tb.add_scalar(f'Loss/{tag}', run/len(loader), epoch)
-    tb.add_scalar(f'Accuracy/{tag}', cor/len(loader.dataset), epoch)
-    return run/len(loader), cor/len(loader.dataset)
+    def add_pred(self, gt, act):
+        self.gt_array = np.append(self.gt_array, gt.astype(np.uint8))
+        self.pred_array = np.append(self.pred_array, np.argmax(act).astype(np.uint8))
 
-# ───────────────────────── evaluate & save ─────────────────
-def evaluate_and_save(model, df, ds_obj, tag, device, out_dir, loss_fn=None):
-    model.eval(); rows, gt, pred = [], [], []
-    for i in tqdm(range(len(df)), desc=f"  {tag} Eval", ncols=100):
-        data = ds_obj[i].to(device)
-        with torch.no_grad():
-            out = model(data.x, data.edge_index, torch.zeros(19,dtype=torch.int64,device=device))
-            logits = out[0] if isinstance(out, tuple) else out
-        logits_np = logits.squeeze().cpu().numpy()
-        soft = softmax(logits_np)
-        p = int(soft.argmax())
-        t = int(df.iloc[i]['label'])
-        rows.append({'crop_file': df.iloc[i]['crop_file'],
-                     'logits': logits_np.tolist(),
-                     'softmax_values': soft.tolist(),
-                     'pred_label': p,
-                     'true_label': t})
-        gt.append(t); pred.append(p)
-    os.makedirs(out_dir, exist_ok=True)
-    rep = classification_report(gt, pred, digits=4)
-    with open(os.path.join(out_dir,f"{tag}_classification_report.txt"),'w') as f:
-        f.write(rep)
-    cm = confusion_matrix(gt, pred)
-    plt.figure(figsize=(6,6)); plt.imshow(cm,cmap='Blues'); plt.title(f"{tag} CM")
-    plt.savefig(os.path.join(out_dir,f"{tag}_confusion_matrix.png")); plt.close()
-    pd.DataFrame(rows).to_csv(os.path.join(out_dir,f"{tag}_inferences.csv"),index=False)
-    print(f"\n== {tag.upper()} ==\n{rep}\n{cm}")
+    def get_arrays(self):
+        return self.gt_array, self.pred_array
 
-# ───────────────────────── main ────────────────────────────
+
+class ConsensusPredCounter:
+    """
+    Predictions counter for 'consensus' eval mode.
+    """
+    def __init__(self):
+        self.recs_gt = {}
+        self.recs_preds = {}
+
+    def add_pred(self, gt, act, rec_id):
+        self.recs_gt[rec_id] = gt.astype(np.uint8)
+        self.recs_preds[rec_id] = np.append(self.recs_preds.get(rec_id, np.empty((0,), dtype=np.uint8)), np.argmax(act).astype(np.uint8))
+
+    def get_arrays(self):
+        gt_array = np.empty((0,), dtype=np.uint8)
+        pred_array = np.empty((0,), dtype=np.uint8)
+        for i in self.recs_gt:
+            gt_array = np.append(gt_array, self.recs_gt[i])
+            pred_array = np.append(pred_array, np.argmax(np.bincount(self.recs_preds[i])).astype(np.uint8))
+        return gt_array, pred_array
+
+
+class AvgPredCounter:
+    """
+    Predictions counter for 'avg' eval mode.
+    """
+    def __init__(self):
+        self.recs_gt = {}
+        self.recs_preds = {}
+
+    def add_pred(self, gt, act, rec_id):
+        self.recs_gt[rec_id] = gt.astype(np.uint8)
+        self.recs_preds[rec_id] = self.recs_preds.get(rec_id, np.zeros((act.shape[0],))) + softmax(act)
+
+    def get_arrays(self):
+        gt_array = np.empty((0,), dtype=np.uint8)
+        pred_array = np.empty((0,), dtype=np.uint8)
+        for i in self.recs_gt:
+            gt_array = np.append(gt_array, self.recs_gt[i])
+            # division not necessary, argmax of sum = argmax of avg
+            pred_array = np.append(pred_array, np.argmax(self.recs_preds[i]).astype(np.uint8))
+        return gt_array, pred_array
+
+
+def compute_print_metrics(gt_array, pred_array):
+    acc = accuracy_score(gt_array, pred_array)
+    class_report = classification_report(gt_array, pred_array)
+    cm = confusion_matrix(gt_array, pred_array)
+    print(f'\nAccuracy: {acc:.6f}\n')
+    print(class_report)
+    print(cm)
+
+
+def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn):
+    model.train()
+    running_loss = 0.
+    correct = 0
+
+    for i, data in enumerate(tqdm(loader, ncols=100, desc='  Train')):
+        data = data.to(device)
+        optimizer.zero_grad()
+        out = model(data.x, data.edge_index, data.batch)
+        loss = loss_fn(out, data.y)
+        running_loss += loss.item()
+        loss.backward()
+        optimizer.step()
+        # Running acc
+        pred = out.argmax(dim=1)
+        correct += int((pred == data.y).sum())
+
+    print('  Logging to TensorBoard... ', end='')
+    # log epoch loss
+    avg_loss = running_loss / len(loader)
+    tb_writer.add_scalar('Loss/train', avg_loss, epoch)
+    # log epoch acc
+    epoch_acc = correct / len(loader.dataset)
+    tb_writer.add_scalar('Accuracy/train', epoch_acc, epoch)
+    print('done.')
+
+    return (avg_loss, epoch_acc)
+
+
+def val_one_epoch(model, epoch, tb_writer, loader, device, loss_fn, testing=False):
+    model.eval()
+    running_loss = 0.
+    correct = 0
+
+    tqdm_desc = '  Test' if testing else '  Val'
+    for i, data in enumerate(tqdm(loader, ncols=100, desc=tqdm_desc)):
+        data = data.to(device)
+        out = model(data.x, data.edge_index, data.batch)
+        loss = loss_fn(out, data.y)
+        running_loss += loss.item()
+        # Running acc
+        pred = out.argmax(dim=1)
+        correct += int((pred == data.y).sum())
+
+    print('  Logging to TensorBoard... ', end='')
+    # log epoch loss
+    avg_loss = running_loss / len(loader)
+    if testing:
+        tb_writer.add_scalar('Loss/test', avg_loss, epoch)
+    else:
+        tb_writer.add_scalar('Loss/val', avg_loss, epoch)
+    # log epoch acc
+    epoch_acc = correct / len(loader.dataset)
+    if testing:
+        tb_writer.add_scalar('Accuracy/test', epoch_acc, epoch)
+    else:
+        tb_writer.add_scalar('Accuracy/val', epoch_acc, epoch)
+    print('done.')
+
+    return (avg_loss, epoch_acc)
+
+
 def main():
     args = argparser()
     seed_everything(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/arcface/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/arcface/checkpoints/train_{session_timestamp}/'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/three_head/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/three_head/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/three_head/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
-    results_save_dir = checkpoint_save_dir.replace('checkpoints', 'results')
-    os.makedirs(results_save_dir, exist_ok=True) 
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
     #crop_data_path = os.path.join(args.ds_parent_dir, args.ds_name, "data")
@@ -138,36 +222,156 @@ def main():
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
 
-    train_ds = CWTGraphDataset(train_df, crop_data_path, None)
-    val_ds   = CWTGraphDataset(val_df,   crop_data_path, None)
-    test_ds  = CWTGraphDataset(test_df,  crop_data_path, None)
+    train_dataset = CWTGraphDataset(train_df, crop_data_path, None)
+    val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
+    test_dataset = CWTGraphDataset(test_df, crop_data_path, None)
 
-    train_ld = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
-                          num_workers=args.num_workers, pin_memory=False)
-    val_ld   = DataLoader(val_ds,   batch_size=args.batch_size, shuffle=False,
-                          num_workers=args.num_workers)
-    test_ld  = DataLoader(test_ds,  batch_size=args.batch_size, shuffle=False,
-                          num_workers=args.num_workers)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
-    model = GNNCWT2D_Mk11_1sec_3H(19, (40,500)).to(device)
-    optim = torch.optim.Adam(model.parameters(),
-                             lr=args.lr, weight_decay=args.weight_decay)
+    num_classes = args.classes.count('-') + 1
+    backbone = GNNCWT2D_Mk11_1sec()                     # feat_dim=32 di default
+    model    = HierarchicalBinaryThreeHead(backbone).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
 
-    best = 0.0
-    for ep in range(args.num_epochs):
-        tl, ta = train_one_epoch(model, ep, writer, train_ld, device, optim)
-        vl, va = val_one_epoch(model, ep, writer, val_ld, device, 'val')
-        print(f"Ep{ep}  train {ta:.3f}  val {va:.3f}")
-        if va > best + 1e-3:
-            best = va; torch.save(model.state_dict(), os.path.join(checkpoint_save_dir,'best.pt'))
+    print(f'Session timestamp: {session_timestamp}')
+    print(f'Model: {type(model).__name__}')
+    print(f'Training samples: {len(train_dataset)}')
+    print(f'Validation samples: {len(val_dataset)}')
+    print(f'Test samples: {len(test_dataset)}')
+    print(f'Args in experiment: {args}')
+    print()
+    #write_tboard_dict(config_dict, writer)
 
-    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir,'best.pt'), map_location=device))
-    val_one_epoch(model, ep, writer, val_ld, device, 'val')
-    val_one_epoch(model, ep, writer, test_ld, device, 'test')
+    # Training loop
+    #best_test_accuracy = 0
+    best_val_accuracy = 0 # saving the best model based on validation accuracy
+    for current_epoch in range(args.num_epochs):
+        print(f'\nStarting epoch {current_epoch:03d}.')
+        train_loss, train_acc = train_one_epoch(model, current_epoch, writer, train_dataloader, device, optimizer, loss_fn)
+        # if current_epoch > 4:
+        #     scheduler.step()
+        with torch.no_grad():
+            val_loss, val_acc = val_one_epoch(model, current_epoch, writer, val_dataloader, device, loss_fn)
+            test_loss, test_acc = val_one_epoch(model, current_epoch, writer, test_dataloader, device, loss_fn, testing=True)
+        writer.flush()
+        print(f'Epoch {current_epoch:03d} done.')
+        print(f'  Accuracy (train/val/test): {train_acc:.4f}/{val_acc:.4f}/{test_acc:.4f}')
+        print(f'  Loss (train/val/test): {train_loss:.4f}/{val_loss:.4f}/{test_loss:.4f}')
 
-    evaluate_and_save(model, train_df, train_ds, 'train', device, results_save_dir)
-    evaluate_and_save(model, val_df, val_ds, 'val', device, results_save_dir)
-    evaluate_and_save(model, test_df, test_ds, 'test', device, results_save_dir)
+        # Save last model
+        print("Saving checkpoint... ", end='')
+        checkpoint_save_dict = {
+            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
+            'epoch': current_epoch,
+            'train_acc': train_acc,
+            'train_loss': train_loss,
+            'val_acc': val_acc,
+            'val_loss': val_loss,
+            'test_acc': test_acc,
+            'test_loss': test_loss,
+            'model_state_dict': model.state_dict(),
+            #'scheduler_state_dict': scheduler.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict()
+        }
+        torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'last.pt'))
+        print('done.')
+
+        # Save best test acc model (morally and technically WRONG!)
+        #if test_acc > best_test_accuracy:
+            #print("New best test acc, saving checkpoint... ", end='')
+            #best_test_accuracy = test_acc
+            #torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_test_acc.pt'))
+            #print('done.')
+
+        # Save best val acc model
+        if val_acc > best_val_accuracy:
+            print("New best val acc, saving checkpoint... ", end='')
+            best_val_accuracy = val_acc
+            torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_val_acc.pt'))
+
+
+    # Eval val set
+    crop_pred_counter = CropPredCounter()
+    consensus_pred_counter = ConsensusPredCounter()
+    avg_pred_counter = AvgPredCounter()
+    print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Evaluating on val set... <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_val_acc.pt'), map_location=device)['model_state_dict'])
+    model.eval()
+    for s in tqdm(range(len(val_df)), ncols=100):
+        data = val_dataset[s]
+        data = data.to(device)
+        with torch.no_grad():
+            out = model(data.x, data.edge_index, torch.zeros(19, dtype=torch.int64).to(device))
+
+        crop_name = val_df.iloc[s]['crop_file']
+        crop_gt = val_df.iloc[s]['label']
+        crop_act = np.squeeze(out.detach().cpu().numpy())
+        orig_rec = annotations[annotations['crop_file']==crop_name].iloc[0]['original_rec']
+        crop_pred_counter.add_pred(crop_gt, crop_act)
+        consensus_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
+        avg_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
+
+    # Final metrics
+    # Crop pred counter
+    print('\n\n======================= CROP ========================')
+    gt_array, pred_array = crop_pred_counter.get_arrays()
+    compute_print_metrics(gt_array, pred_array)
+    # Consensus pred counter
+    print('\n\n===================== CONSENSUS =====================')
+    gt_array, pred_array = consensus_pred_counter.get_arrays()
+    compute_print_metrics(gt_array, pred_array)
+    # Avg pred counter
+    print('\n\n======================== AVG ========================')
+    gt_array, pred_array = avg_pred_counter.get_arrays()
+    compute_print_metrics(gt_array, pred_array)
+
+    # Eval test set
+    crop_pred_counter = CropPredCounter()
+    consensus_pred_counter = ConsensusPredCounter()
+    avg_pred_counter = AvgPredCounter()
+    print(f"\n\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Evaluating on test set... <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+    model.load_state_dict(torch.load(os.path.join(checkpoint_save_dir, f'best_val_acc.pt'), map_location=device)['model_state_dict'])
+    model.eval()
+    for s in tqdm(range(len(test_df)), ncols=100):
+        data = test_dataset[s]
+        data = data.to(device)
+        with torch.no_grad():
+            out = model(data.x, data.edge_index, torch.zeros(19, dtype=torch.int64).to(device))
+
+        crop_name = test_df.iloc[s]['crop_file']
+        crop_gt = test_df.iloc[s]['label']
+        crop_act = np.squeeze(out.detach().cpu().numpy())
+        orig_rec = annotations[annotations['crop_file']==crop_name].iloc[0]['original_rec']
+        crop_pred_counter.add_pred(crop_gt, crop_act)
+        consensus_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
+        avg_pred_counter.add_pred(crop_gt, crop_act, orig_rec)
+
+    # Final metrics
+    # Crop pred counter
+    print('\n\n======================= CROP ========================')
+    gt_array, pred_array = crop_pred_counter.get_arrays()
+    compute_print_metrics(gt_array, pred_array)
+    # Consensus pred counter
+    print('\n\n===================== CONSENSUS =====================')
+    gt_array, pred_array = consensus_pred_counter.get_arrays()
+    compute_print_metrics(gt_array, pred_array)
+    # Avg pred counter
+    print('\n\n======================== AVG ========================')
+    gt_array, pred_array = avg_pred_counter.get_arrays()
+    compute_print_metrics(gt_array, pred_array)
+
+    evaluate_and_save(model, train_df, train_dataset, 'train',
+                    device, results_save_dir, loss_fn)
+    evaluate_and_save(model, val_df,   val_dataset,   'val',
+                    device, results_save_dir, loss_fn)
+    evaluate_and_save(model, test_df,  test_dataset,  'test',
+                    device, results_save_dir, loss_fn)
+
+print('Finish')
 
 if __name__ == "__main__":
     main()
