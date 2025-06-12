@@ -41,16 +41,14 @@ class _EdgeWeightsGraphConvLayer(nn.Module):
 
 
 # --------------------------------------------------------------------- #
-# 2.  Backbone: identico alla Mk11_1sec ma con return_features opzionale #
+# Backbone – GNNCWT2D_Mk11_1sec  (fix in_features = 800)                #
 # --------------------------------------------------------------------- #
 class GNNCWT2D_Mk11_1sec(nn.Module):
     """
-    Accetta CWT di forma (B, 19, 40, 500) –> restituisce:
-      • vettore logit [B, num_classes]  (se return_features=False)
-      • vettore feature [B, feat_dim]   (se return_features=True)
-
-    NOTA: la signature resta (x, edge_index, batch) per retro-compatibilità
-    con lo script di training originale.
+    Backbone grafico per CWT EEG (1 s):
+      • input:  (B, 19, 40, 500)
+      • output: feature [B, feat_dim]   se return_features=True
+                logit   [B, 3]         altrimenti
     """
     def __init__(self,
                  n_electrodes: int = 19,
@@ -60,8 +58,12 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.n_electrodes = n_electrodes
         self.n_freq, self.n_time = cwt_size
 
-        # blocco fully-connected “pixel-wise”
-        self.lin2  = nn.Linear(self.n_freq * 25, 512)   # 40×25 = 1000 -> 512
+        # ---------- parametro finestra temporale ----------
+        self.win_len = 25                          # campioni (0,05 s)
+        self.n_windows = self.n_time // self.win_len  # 500//25 = 20
+
+        # ---------- MLP per-elettrodo ----------
+        self.lin2  = nn.Linear(self.n_freq * self.n_windows, 512)  # 40×20 = 800
         self.bn3   = nn.BatchNorm1d(n_electrodes)
         self.drop3 = nn.Dropout(0.2)
         self.lin3  = nn.Linear(512, 256)
@@ -71,7 +73,7 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.bn5   = nn.BatchNorm1d(n_electrodes)
         self.drop5 = nn.Dropout(0.2)
 
-        # convoluzioni sul grafo 10-20
+        # ---------- GraphConv ----------
         self.gconv1 = _EdgeWeightsGraphConvLayer(60, 128, 64)
         self.bn6    = nn.BatchNorm1d(64)
         self.drop6  = nn.Dropout(0.2)
@@ -79,9 +81,40 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.bn7    = nn.BatchNorm1d(64)
         self.drop7  = nn.Dropout(0.2)
 
-        # pooling globale → feature finali
-        self.lin5 = nn.Linear(64, feat_dim)   # <- feature vector (default 32)
-        self.lin6 = nn.Linear(feat_dim, 3)    # manteniamo per compatibilità
+        # ---------- Pooling & classifier ----------
+        self.lin5 = nn.Linear(64, feat_dim)
+        self.lin6 = nn.Linear(feat_dim, 3)
+
+    # ----------------------------------------------------------------- #
+    def forward(self, x, edge_index, batch, *, return_features: bool = False):
+        B = torch.unique(batch).numel()
+
+        # reshape → (B, 19, 40, 500)
+        x = x.view(B, self.n_electrodes, self.n_freq, self.n_time)
+        # media su finestre di 25 sample
+        x = x.view(B, self.n_electrodes, self.n_freq,
+                   self.n_windows, self.win_len).mean(dim=4)
+        # flatten → (B, 19, 800)
+        x = x.reshape(B, self.n_electrodes, -1)
+
+        # MLP per-elettrodo
+        x = F.relu(self.lin2(x));   x = self.bn3(x); x = self.drop3(x)
+        x = F.relu(self.lin3(x));   x = self.bn4(x); x = self.drop4(x)
+        x = F.relu(self.lin4(x));   x = self.bn5(x); x = self.drop5(x)
+
+        # GraphConv (B·19, feat)
+        x = x.view(B * self.n_electrodes, -1)
+        x = F.relu(self.gconv1(x, edge_index)); x = self.bn6(x); x = self.drop6(x)
+        x = F.relu(self.gconv2(x, edge_index)); x = self.bn7(x); x = self.drop7(x)
+
+        # pooling max → feature
+        x = global_max_pool(x, batch)
+        features = F.relu(self.lin5(x))
+
+        if return_features:
+            return features
+        return self.lin6(features)
+
 
     # ------------------------------------------------------------- #
     def forward(self, x, edge_index, batch, *, return_features: bool = False):
