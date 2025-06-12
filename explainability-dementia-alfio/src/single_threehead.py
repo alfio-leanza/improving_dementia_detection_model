@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from model_threehead import *
+from model_threehead import *              # ⬅️  NUOVO import
 from single_fold_arcface import evaluate_and_save
 
 """
@@ -29,22 +29,18 @@ Subject idxs are hacked into the code instead of using StratifiedKFold or LeaveO
 
 def argparser():
     parser = argparse.ArgumentParser(description='Fake K-Fold cross validation (single fold) for preprocessed data. Custom handmade splitting is performed', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    #parser.add_argument('-k', '--k', default=10, type=int, help='number of folds')
     parser.add_argument('-n', '--ds_name', required=True, help='name of the preprocessed dataset')
     parser.add_argument('-c', '--classes', required=True, help='classes to use expressed as in annot file names (e.g. \'hc-ad\')')
     parser.add_argument('-p', '--ds_parent_dir', default='local/datasets/', help='parent directory of the preprocessed dataset')
     parser.add_argument('-d', '--device', default='cuda:0', help='device for computations (cuda:0, cpu, etc.)')
     parser.add_argument('-s', '--seed', default=1234, type=int, help='general reproducibility seed')
-    #parser.add_argument('-t', '--splitter_seed', default=69, type=int, help='kfold splitter seed')
     parser.add_argument('-b', '--batch_size', default=64, type=int, help='training batch size')
     parser.add_argument('-w', '--num_workers', default=4, type=int, help='number of workers for dataloaders')
     parser.add_argument('-e', '--num_epochs', default=100, type=int, help='training epochs')
     parser.add_argument('-r', '--lr', default=0.00001, type=float, help='training learning rate')
     parser.add_argument('-y', '--weight_decay', default=1e-8, type=float, help='training weight decay')
     parser.add_argument('-g', '--scheduler_gamma', default=0.98, type=float, help='exponential decay gamma')
-    #parser.add_argument('-l', '--loo', action='store_true', help='ignore k and apply leave-one-out cross-validation (k = # samples)')
     parser.add_argument('--debug', action='store_true', help='do not produce artifacts (no tensorboard logs, no saved checkpoints, etc)')
-    #parser.set_defaults(loo=False)
     parser.set_defaults(debug=False)
     args = parser.parse_args()
     return args
@@ -117,78 +113,97 @@ def compute_print_metrics(gt_array, pred_array):
     print(class_report)
     print(cm)
 
-
-def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer, loss_fn):
+# ------------------------------------------------------------------- #
+def train_one_epoch(model, epoch, tb_writer, loader, device, optimizer,
+                    ce_hard, kl_soft, alpha, T):
+    """
+    Training con loss collaborativa:
+      L = α * CE_hard + (1-α) * KL_soft
+    """
     model.train()
     running_loss = 0.
     correct = 0
 
-    for i, data in enumerate(tqdm(loader, ncols=100, desc='  Train')):
+    for data in tqdm(loader, ncols=100, desc='  Train'):
         data = data.to(device)
         optimizer.zero_grad()
-        out = model(data.x, data.edge_index, data.batch)
-        loss = loss_fn(out, data.y)
+
+        # ----- forward: otteniamo logit medio + lista delle K teste -----
+        avg_logit, logits_list = model(data.x, data.edge_index, data.batch,
+                                       return_all=True)
+
+        # ---------------- Hard CE (su ogni testa) ---------------------- #
+        hard_loss = torch.stack([ce_hard(l, data.y) for l in logits_list]).mean()
+
+        # ---------------- Soft KL fra teste --------------------------- #
+        with torch.no_grad():
+            soft_targets = torch.softmax(torch.stack(logits_list, 0).mean(0) / T, dim=1)
+        soft_loss = 0.
+        for l in logits_list:
+            student_log = torch.log_softmax(l / T, dim=1)
+            soft_loss += kl_soft(student_log, soft_targets)
+        soft_loss = (soft_loss / len(logits_list)) * (T * T)
+
+        loss = alpha * hard_loss + (1 - alpha) * soft_loss
         running_loss += loss.item()
+
         loss.backward()
         optimizer.step()
-        # Running acc
-        pred = out.argmax(dim=1)
+
+        # running accuracy da logit medio
+        pred = avg_logit.argmax(dim=1)
         correct += int((pred == data.y).sum())
 
-    print('  Logging to TensorBoard... ', end='')
-    # log epoch loss
+    # ---------- TensorBoard logging ----------
     avg_loss = running_loss / len(loader)
     tb_writer.add_scalar('Loss/train', avg_loss, epoch)
-    # log epoch acc
     epoch_acc = correct / len(loader.dataset)
     tb_writer.add_scalar('Accuracy/train', epoch_acc, epoch)
-    print('done.')
 
     return (avg_loss, epoch_acc)
 
 
 def val_one_epoch(model, epoch, tb_writer, loader, device, loss_fn, testing=False):
+    """
+    Validation e Test: si usa solo il logit medio (no collaborativa).
+    """
     model.eval()
     running_loss = 0.
     correct = 0
-
     tqdm_desc = '  Test' if testing else '  Val'
-    for i, data in enumerate(tqdm(loader, ncols=100, desc=tqdm_desc)):
+
+    for data in tqdm(loader, ncols=100, desc=tqdm_desc):
         data = data.to(device)
-        out = model(data.x, data.edge_index, data.batch)
+        out = model(data.x, data.edge_index, data.batch)   # logit medio
         loss = loss_fn(out, data.y)
         running_loss += loss.item()
-        # Running acc
         pred = out.argmax(dim=1)
         correct += int((pred == data.y).sum())
 
-    print('  Logging to TensorBoard... ', end='')
-    # log epoch loss
     avg_loss = running_loss / len(loader)
+    epoch_acc = correct / len(loader.dataset)
+
+    # TensorBoard
     if testing:
         tb_writer.add_scalar('Loss/test', avg_loss, epoch)
-    else:
-        tb_writer.add_scalar('Loss/val', avg_loss, epoch)
-    # log epoch acc
-    epoch_acc = correct / len(loader.dataset)
-    if testing:
         tb_writer.add_scalar('Accuracy/test', epoch_acc, epoch)
     else:
+        tb_writer.add_scalar('Loss/val', avg_loss, epoch)
         tb_writer.add_scalar('Accuracy/val', epoch_acc, epoch)
-    print('done.')
 
     return (avg_loss, epoch_acc)
 
 
+# ------------------------------------------------------------------- #
 def main():
     args = argparser()
     seed_everything(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/three_head/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/three_head/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/three_head/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/multi_head/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/multi_head/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/multi_head/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -230,41 +245,44 @@ def main():
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
+    # ---------------------- MODELLO MCL ----------------------------- #
     num_classes = args.classes.count('-') + 1
-    backbone = GNNCWT2D_Mk11_1sec()                     # feat_dim=32 di default
-    model    = HierarchicalBinaryThreeHead(backbone).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    loss_fn = torch.nn.CrossEntropyLoss()
-    #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_gamma)
+    backbone = GNNCWT2D_Mk11_1sec(feat_dim=64)
+    model    = MultiHeadCollaborativeGNN(backbone, feat_dim=64,
+                                         num_heads=3, temperature=2.0).to(device)
 
-    print(f'Session timestamp: {session_timestamp}')
-    print(f'Model: {type(model).__name__}')
-    print(f'Training samples: {len(train_dataset)}')
-    print(f'Validation samples: {len(val_dataset)}')
-    print(f'Test samples: {len(test_dataset)}')
-    print(f'Args in experiment: {args}')
-    print()
-    #write_tboard_dict(config_dict, writer)
+    # --- losses (niente pesi di classe, niente Focal) ---------------
+    ce_hard = torch.nn.CrossEntropyLoss()
+    kl_soft = torch.nn.KLDivLoss(reduction='batchmean')
+    alpha_start, alpha_end = 0.9, 0.7
+    T = 2.0
 
-    # Training loop
-    #best_test_accuracy = 0
-    best_val_accuracy = 0 # saving the best model based on validation accuracy
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,
+                                 weight_decay=args.weight_decay)
+
+    best_val_accuracy = 0
     for current_epoch in range(args.num_epochs):
         print(f'\nStarting epoch {current_epoch:03d}.')
-        train_loss, train_acc = train_one_epoch(model, current_epoch, writer, train_dataloader, device, optimizer, loss_fn)
-        # if current_epoch > 4:
-        #     scheduler.step()
+        # annealing lineare di α
+        alpha = alpha_start - (alpha_start - alpha_end) * current_epoch / (args.num_epochs - 1)
+
+        train_loss, train_acc = train_one_epoch(
+            model, current_epoch, writer, train_dataloader, device,
+            optimizer, ce_hard, kl_soft, alpha, T)
+
         with torch.no_grad():
-            val_loss, val_acc = val_one_epoch(model, current_epoch, writer, val_dataloader, device, loss_fn)
-            test_loss, test_acc = val_one_epoch(model, current_epoch, writer, test_dataloader, device, loss_fn, testing=True)
+            val_loss, val_acc = val_one_epoch(model, current_epoch, writer,
+                                              val_dataloader, device, ce_hard)
+            test_loss, test_acc = val_one_epoch(model, current_epoch, writer,
+                                                test_dataloader, device, ce_hard,
+                                                testing=True)
         writer.flush()
         print(f'Epoch {current_epoch:03d} done.')
         print(f'  Accuracy (train/val/test): {train_acc:.4f}/{val_acc:.4f}/{test_acc:.4f}')
         print(f'  Loss (train/val/test): {train_loss:.4f}/{val_loss:.4f}/{test_loss:.4f}')
 
-        # Save last model
-        print("Saving checkpoint... ", end='')
-        checkpoint_save_dict = {
+        # ---------- checkpoint ----------
+        checkpoint = {
             'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
             'epoch': current_epoch,
             'train_acc': train_acc,
@@ -274,25 +292,16 @@ def main():
             'test_acc': test_acc,
             'test_loss': test_loss,
             'model_state_dict': model.state_dict(),
-            #'scheduler_state_dict': scheduler.state_dict(),
             'optimizer_state_dict': optimizer.state_dict()
         }
-        torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'last.pt'))
-        print('done.')
+        torch.save(checkpoint, os.path.join(checkpoint_save_dir, 'last.pt'))
 
-        # Save best test acc model (morally and technically WRONG!)
-        #if test_acc > best_test_accuracy:
-            #print("New best test acc, saving checkpoint... ", end='')
-            #best_test_accuracy = test_acc
-            #torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_test_acc.pt'))
-            #print('done.')
-
-        # Save best val acc model
         if val_acc > best_val_accuracy:
-            print("New best val acc, saving checkpoint... ", end='')
             best_val_accuracy = val_acc
-            torch.save(checkpoint_save_dict, os.path.join(checkpoint_save_dir, f'best_val_acc.pt'))
+            torch.save(checkpoint, os.path.join(checkpoint_save_dir, 'best_val_acc.pt'))
+            print("New best val acc checkpoint saved.")
 
+   
 
     # Eval val set
     crop_pred_counter = CropPredCounter()
@@ -365,11 +374,12 @@ def main():
     compute_print_metrics(gt_array, pred_array)
 
     evaluate_and_save(model, train_df, train_dataset, 'train',
-                    device, results_save_dir, loss_fn)
+                    device, results_save_dir, kl_soft)
     evaluate_and_save(model, val_df,   val_dataset,   'val',
-                    device, results_save_dir, loss_fn)
+                    device, results_save_dir, kl_soft)
     evaluate_and_save(model, test_df,  test_dataset,  'test',
-                    device, results_save_dir, loss_fn)
+                    device, results_save_dir, kl_soft)
+
 
 print('Finish')
 
