@@ -42,9 +42,9 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.win = 25
         self.nw = self.nt // self.win
 
-        self.lin2 = nn.Linear(self.nf * self.nw, 512)
-        self.lin3 = nn.Linear(512, 256)
-        self.lin4 = nn.Linear(256, 128)
+        self.lin2 = nn.Linear(self.nf * self.nw, 256)
+        self.lin3 = nn.Linear(256, 128)
+        #self.lin4 = nn.Linear(256, 128)
 
         self.bn2 = nn.BatchNorm1d(n_electrodes)
         self.bn3 = nn.BatchNorm1d(n_electrodes)
@@ -66,7 +66,7 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
 
         x = F.relu(self.lin2(x)); x = self.bn2(x); x = self.drop(x)
         x = F.relu(self.lin3(x)); x = self.bn3(x); x = self.drop(x)
-        x = F.relu(self.lin4(x)); x = self.bn4(x); x = self.drop(x)
+        #x = F.relu(self.lin4(x)); x = self.bn4(x); x = self.drop(x)
 
         x = x.view(B * self.ne, -1)
         x = F.relu(self.g1(x, edge_index)); x = self.bn_g1(x); x = self.drop(x)
