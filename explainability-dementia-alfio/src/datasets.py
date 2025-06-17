@@ -46,13 +46,13 @@ class CWTGraphDataset(Dataset):
             self.scaler = StandardScaler()
 
         if self.dup_factor > 1:
-            ftd_df   = self.base_df[self.base_df['label'] == 1]
-            dup_list = [self.base_df] + [ftd_df.copy()
+            ftd_df   = self.annot_df[self.annot_df['label'] == 1]
+            dup_list = [self.annot_df] + [ftd_df.copy()
                          for _ in range(self.dup_factor - 1)]
             self.df  = pd.concat(dup_list, ignore_index=True)
             self.df  = self.df.sample(frac=1, random_state=42).reset_index(drop=True)
         else:
-            self.df = self.base_df
+            self.df = self.annot_df
 
 
     def len(self):
