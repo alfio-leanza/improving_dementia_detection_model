@@ -232,7 +232,7 @@ def main():
     # ----------------- 3. Sampler -----------------
     sampler = WeightedRandomSampler(
                 weights=sample_weights,
-                num_samples=int(len(train_dataset * 1.5)),
+                num_samples=len(train_dataset),
                 replacement=True)
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False, sampler = sampler)
