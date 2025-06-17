@@ -30,11 +30,12 @@ def normalize_eeg(eeg, eeg_mean, eeg_std):
 
 
 class CWTGraphDataset(Dataset):
-    def __init__(self, annot_df, dataset_crop_path, norm_stats_path, augment = False):
+    def __init__(self, annot_df, dataset_crop_path, norm_stats_path, augment = False, dup_factor: int = 2):
         super().__init__()
         self.annot_df = annot_df
         self.dataset_crop_path = dataset_crop_path
         self.augment = augment
+        self.dup_factor = max(1,dup_factor)
         if norm_stats_path is not None:
             norm_stats = np.load(norm_stats_path)
             self.norm_mean = norm_stats['list_mean']
@@ -43,6 +44,16 @@ class CWTGraphDataset(Dataset):
             self.norm_mean = None
             self.norm_std = None
             self.scaler = StandardScaler()
+
+        if self.dup_factor > 1:
+            ftd_df   = self.base_df[self.base_df['label'] == 1]
+            dup_list = [self.base_df] + [ftd_df.copy()
+                         for _ in range(self.dup_factor - 1)]
+            self.df  = pd.concat(dup_list, ignore_index=True)
+            self.df  = self.df.sample(frac=1, random_state=42).reset_index(drop=True)
+        else:
+            self.df = self.base_df
+
 
     def len(self):
         # torch_geometric.data.Dataset objects are peculiar.
@@ -90,6 +101,7 @@ class CWTGraphDataset(Dataset):
             # ---------------- augmentation only for FTD ---------------- #
         if self.augment and record['label'] == 1:          # 1 = FTD
             cwt = cwt + np.random.normal(0, 0.01, cwt.shape)
+
 
         x = np.moveaxis(norm_cwt, 2, 0)
         x = np.reshape(x, (19, -1))
