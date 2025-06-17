@@ -15,7 +15,7 @@ from sklearn.metrics import confusion_matrix
 from torch_geometric.loader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import StratifiedKFold, LeaveOneOut
-
+from torch.utils.data import WeightedRandomSampler
 from utils import seed_everything, write_tboard_dict
 from datasets import *
 from model_ovr import *                 ### OVR MOD ###  (nuovo import)
@@ -216,11 +216,26 @@ def main():
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
 
-    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = True, dup_factor= 2)
-    val_dataset = CWTGraphDataset(val_df, crop_data_path, None, augment = False, dup_factor= 1)
-    test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False, dup_factor= 1)
+    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = True)
+    val_dataset = CWTGraphDataset(val_df, crop_data_path, None, augment = False)
+    test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False)
+        # ----------------- 2. Pesi per il sampler -----------------
+    labels = train_dataset['label'].values           # array (N,) con 0=HC, 1=FTD, 2=AD
+
+    # pesi:   HC=1   FTD= <dup_factor>   AD=1
+    dup_factor = 2                              # quante *volte* vuoi vedere FTD
+    class_weights = np.array([1.0, dup_factor, 1.0], dtype=np.float32)
+
+    sample_weights = class_weights[labels]      # shape = (N,)
+
+    # ----------------- 3. Sampler -----------------
+    sampler = WeightedRandomSampler(
+                weights=sample_weights,
+                num_samples=int(len(train_dataset * 1.5)),
+                replacement=True)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False, sampler = sampler)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
@@ -245,7 +260,7 @@ def main():
     print(f'Test samples: {len(test_dataset)}')
     print(f'Args in experiment: {args}')
     print()
-    
+
     best_val_accuracy = 0
     for current_epoch in range(args.num_epochs):
         print(f'\nStarting epoch {current_epoch:03d}.')
