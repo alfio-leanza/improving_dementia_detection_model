@@ -238,6 +238,14 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=args.lr, weight_decay=args.weight_decay)
 
+    print(f'Session timestamp: {session_timestamp}')
+    print(f'Model: {type(model).__name__}')
+    print(f'Training samples: {len(train_dataset)}')
+    print(f'Validation samples: {len(val_dataset)}')
+    print(f'Test samples: {len(test_dataset)}')
+    print(f'Args in experiment: {args}')
+    print()
+    
     best_val_accuracy = 0
     for current_epoch in range(args.num_epochs):
         print(f'\nStarting epoch {current_epoch:03d}.')
