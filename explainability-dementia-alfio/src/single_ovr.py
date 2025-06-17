@@ -221,7 +221,7 @@ def main():
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False)
 
         # ----------------- 2. Pesi per il sampler -----------------
-    labels = train_dataset['label'].values           # array (N,) con 0=HC, 1=FTD, 2=AD
+    labels = train_df['label'].values           # array (N,) con 0=HC, 1=FTD, 2=AD
 
     # pesi:   HC=1   FTD= <dup_factor>   AD=1
     dup_factor = 2                              # quante *volte* vuoi vedere FTD
