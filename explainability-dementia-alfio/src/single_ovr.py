@@ -216,9 +216,9 @@ def main():
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
 
-    train_dataset = CWTGraphDataset(train_df, crop_data_path, None)
-    val_dataset = CWTGraphDataset(val_df, crop_data_path, None)
-    test_dataset = CWTGraphDataset(test_df, crop_data_path, None)
+    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = True)
+    val_dataset = CWTGraphDataset(val_df, crop_data_path, None, augment = False)
+    test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False)
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
