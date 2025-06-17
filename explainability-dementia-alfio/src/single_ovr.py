@@ -180,9 +180,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_fl75/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_fl75/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_fl75/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -231,10 +231,10 @@ def main():
     model    = OneVsRestGNN(backbone, feat_dim=64).to(device)
 
     # BCE per logit binari (nessun pos_weight)
-    #loss_fn  = torch.nn.BCEWithLogitsLoss()
+    loss_fn  = torch.nn.BCEWithLogitsLoss()
     # ---------- FocalLoss: gamma=2, peso maggiore sui positivi FTD ----------
-    alpha = torch.tensor([0.25, 0.75, 0.25])   # HC / FTD / AD
-    loss_fn = FocalLoss(gamma=2.0, alpha=alpha)    ### FOCAL MOD ###
+    #alpha = torch.tensor([0.25, 0.75, 0.25])   # HC / FTD / AD
+    #loss_fn = FocalLoss(gamma=2.0, alpha=alpha)    ### FOCAL MOD ###
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=args.lr, weight_decay=args.weight_decay)
 

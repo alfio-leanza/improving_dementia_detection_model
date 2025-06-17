@@ -30,10 +30,11 @@ def normalize_eeg(eeg, eeg_mean, eeg_std):
 
 
 class CWTGraphDataset(Dataset):
-    def __init__(self, annot_df, dataset_crop_path, norm_stats_path):
+    def __init__(self, annot_df, dataset_crop_path, norm_stats_path, augment = False):
         super().__init__()
         self.annot_df = annot_df
         self.dataset_crop_path = dataset_crop_path
+        self.augment = augment
         if norm_stats_path is not None:
             norm_stats = np.load(norm_stats_path)
             self.norm_mean = norm_stats['list_mean']
@@ -85,6 +86,10 @@ class CWTGraphDataset(Dataset):
                                               2, 17, 6, 12, 16, 5, 18, 4, 3, 13, 7, 17,
                                               11, 5, 15, 12, 6, 4, 18, 8, 14, 17, 7, 9,
                                               8, 6, 5, 15, 9, 18, 13, 7, 6, 18, 18, 7]])
+        
+            # ---------------- augmentation only for FTD ---------------- #
+        if self.augment and record['label'] == 1:          # 1 = FTD
+            cwt = cwt + np.random.normal(0, 0.01, cwt.shape)
 
         x = np.moveaxis(norm_cwt, 2, 0)
         x = np.reshape(x, (19, -1))
