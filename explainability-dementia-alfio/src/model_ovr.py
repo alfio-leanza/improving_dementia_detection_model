@@ -18,7 +18,8 @@ from torch_geometric.nn import GraphConv, global_max_pool, GATConv
 class _EdgeWeightsGraphConvLayer(nn.Module):
     def __init__(self, n_edges, in_ch, out_ch):
         super().__init__()
-        self.conv = GraphConv(in_ch, out_ch, aggr="add")
+        #self.conv = GraphConv(in_ch, out_ch, aggr="add")
+        self.conv = GATConv(in_ch, out_ch, heads = 4, dropout= 0.25, concat = False)
         self.edge_w = nn.Parameter(torch.zeros(n_edges))
         self.n_electrodes = 19
 
@@ -49,8 +50,7 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.drop = nn.Dropout(0.25)
 
         self.g1 = _EdgeWeightsGraphConvLayer(60, 128, 64)
-        #self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 64)
-        self.g2 = GATConv(64, 64, heads=4, concat=False, dropout=0.2)  ### GAT MOD ###
+        self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 64)
         self.bn_g1 = nn.BatchNorm1d(64)
         self.bn_g2 = nn.BatchNorm1d(64)
 
@@ -67,8 +67,8 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         x = F.relu(self.lin4(x)); x = self.bn4(x); x = self.drop(x)
 
         x = x.view(B * self.ne, -1)
-        x = F.relu(self.g1(x, edge_index)); x = self.bn_g1(x); x = self.drop(x)
-        x = F.relu(self.g2(x, edge_index)); x = self.bn_g2(x); x = self.drop(x)
+        x = F.relu(self.g1(x, edge_index)); x = self.bn_g1(x); #x = self.drop(x)
+        x = F.relu(self.g2(x, edge_index)); x = self.bn_g2(x); #x = self.drop(x)
 
         x = global_max_pool(x, batch)
         feat = F.relu(self.lin_feat(x))                                     # (B,feat_dim)
