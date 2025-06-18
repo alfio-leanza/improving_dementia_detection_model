@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 from torch.utils.data import WeightedRandomSampler
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from model_ovr import *                 ### OVR MOD ###  (nuovo import)
+from model_ovr_gatse import *                 ### OVR MOD ###  (nuovo import)
 from single_fold_arcface import evaluate_and_save
 from focal_loss import *
 
@@ -180,9 +180,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_aug_obs_fix/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_aug_obs_fix/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug_obs_fix/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50_gatse/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50_gatse/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50_gatse/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -216,7 +216,7 @@ def main():
     val_df = annotations[annotations['original_rec'].isin(val_subjects)]  # crops in val set
     test_df = annotations[annotations['original_rec'].isin(test_subjects)]  # crops in test set
 
-    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = True)
+    train_dataset = CWTGraphDataset(train_df, crop_data_path, None, augment = False)
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None, augment = False)
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False)
 
@@ -235,21 +235,21 @@ def main():
                 num_samples=len(train_dataset),
                 replacement=True)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False, sampler = sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False,)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
     num_classes = args.classes.count('-') + 1
 
     # ---------------- modello One-Vs-Rest --------------------------- #
-    backbone = GNNCWT2D_Mk11_1sec(feat_dim=32) # before 32
-    model    = OneVsRestGNN(backbone, feat_dim=32).to(device) # before 32
+    backbone = GNNCWT2D_Mk11_1sec_segat(feat_dim=64)
+    model    = OneVsRestGNN(backbone, feat_dim=64).to(device)
 
     # BCE per logit binari (nessun pos_weight)
-    loss_fn  = torch.nn.BCEWithLogitsLoss()
+    #loss_fn  = torch.nn.BCEWithLogitsLoss()
     # ---------- FocalLoss: gamma=2, peso maggiore sui positivi FTD ----------
-    #alpha = torch.tensor([0.25, 0.75, 0.25])   # HC / FTD / AD
-    #loss_fn = FocalLoss(gamma=2.0, alpha=alpha)    ### FOCAL MOD ###
+    alpha = torch.tensor([0.25, 0.5, 0.25])   # HC / FTD / AD
+    loss_fn = FocalLoss(gamma=2.0, alpha=alpha)    ### FOCAL MOD ###
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=args.lr, weight_decay=args.weight_decay)
 

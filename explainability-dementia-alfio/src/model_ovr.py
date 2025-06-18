@@ -36,7 +36,7 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         super().__init__()
         self.ne = n_electrodes
         self.nf, self.nt = cwt_size
-        self.win = 20 # before 25
+        self.win = 25
         self.nw = self.nt // self.win                                     # 20
 
         self.lin2 = nn.Linear(self.nf * self.nw, 512)
@@ -46,12 +46,12 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.bn2 = nn.BatchNorm1d(n_electrodes)
         self.bn3 = nn.BatchNorm1d(n_electrodes)
         self.bn4 = nn.BatchNorm1d(n_electrodes)
-        self.drop = nn.Dropout(0.4) # before 0.25
+        self.drop = nn.Dropout(0.25)
 
         self.g1 = _EdgeWeightsGraphConvLayer(60, 128, 64)
-        self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 32) # before 32
+        self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 64) # before 32
         self.bn_g1 = nn.BatchNorm1d(64)
-        self.bn_g2 = nn.BatchNorm1d(32)
+        self.bn_g2 = nn.BatchNorm1d(64)
 
         self.lin_feat = nn.Linear(32, feat_dim)
 
