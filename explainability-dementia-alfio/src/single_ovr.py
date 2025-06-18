@@ -180,9 +180,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug_obs/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug_obs/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug_obs/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_aug_obs_fix/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_aug_obs_fix/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_head_aug_obs_fix/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -242,8 +242,8 @@ def main():
     num_classes = args.classes.count('-') + 1
 
     # ---------------- modello One-Vs-Rest --------------------------- #
-    backbone = GNNCWT2D_Mk11_1sec(feat_dim=64)
-    model    = OneVsRestGNN(backbone, feat_dim=64).to(device)
+    backbone = GNNCWT2D_Mk11_1sec(feat_dim=32) # before 32
+    model    = OneVsRestGNN(backbone, feat_dim=32).to(device) # before 32
 
     # BCE per logit binari (nessun pos_weight)
     loss_fn  = torch.nn.BCEWithLogitsLoss()
