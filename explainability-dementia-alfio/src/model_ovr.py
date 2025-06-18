@@ -9,7 +9,7 @@ Backbone GNNCWT2D_Mk11_1sec  +  One-Vs-Rest multi-head (tre uscite binarie).
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GraphConv, global_max_pool
+from torch_geometric.nn import GraphConv, global_max_pool, GATConv
 
 
 # ------------------------------------------------------------------ #
@@ -49,7 +49,8 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.drop = nn.Dropout(0.25)
 
         self.g1 = _EdgeWeightsGraphConvLayer(60, 128, 64)
-        self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 64) # before 32
+        #self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 64)
+        self.g2 = GATConv(64, 64, heads=4, concat=False, dropout=0.2)  ### GAT MOD ###
         self.bn_g1 = nn.BatchNorm1d(64)
         self.bn_g2 = nn.BatchNorm1d(64)
 

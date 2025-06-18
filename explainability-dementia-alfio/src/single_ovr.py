@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 from torch.utils.data import WeightedRandomSampler
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from model_ovr_gatse import *                 ### OVR MOD ###  (nuovo import)
+from model_ovr import *                 ### OVR MOD ###  (nuovo import)
 from single_fold_arcface import evaluate_and_save
 from focal_loss import *
 
@@ -242,7 +242,7 @@ def main():
     num_classes = args.classes.count('-') + 1
 
     # ---------------- modello One-Vs-Rest --------------------------- #
-    backbone = GNNCWT2D_Mk11_1sec_segat(feat_dim=64)
+    backbone = GNNCWT2D_Mk11_1sec(feat_dim=64)
     model    = OneVsRestGNN(backbone, feat_dim=64).to(device)
 
     # BCE per logit binari (nessun pos_weight)
