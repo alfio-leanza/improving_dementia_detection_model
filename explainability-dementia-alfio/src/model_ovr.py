@@ -53,7 +53,7 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         self.bn_g1 = nn.BatchNorm1d(64)
         self.bn_g2 = nn.BatchNorm1d(64)
 
-        self.lin_feat = nn.Linear(32, feat_dim)
+        self.lin_feat = nn.Linear(64, feat_dim)
 
     def forward(self, x, edge_index, batch, *, return_features=False):
         B = torch.unique(batch).numel()
