@@ -180,9 +180,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50_gatse/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50_gatse/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50_gatse/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")

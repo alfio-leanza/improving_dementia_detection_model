@@ -18,8 +18,7 @@ from torch_geometric.nn import GraphConv, global_max_pool, GATConv
 class _EdgeWeightsGraphConvLayer(nn.Module):
     def __init__(self, n_edges, in_ch, out_ch):
         super().__init__()
-        #self.conv = GraphConv(in_ch, out_ch, aggr="add")
-        self.conv = GATConv(in_ch, out_ch, heads = 4, dropout= 0.25, concat = False)
+        self.conv = GraphConv(in_ch, out_ch, aggr="add")
         self.edge_w = nn.Parameter(torch.zeros(n_edges))
         self.n_electrodes = 19
 
