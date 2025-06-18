@@ -50,7 +50,7 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
 
         self.g1 = _EdgeWeightsGraphConvLayer(60, 128, 64)
         self.g2 = _EdgeWeightsGraphConvLayer(60, 64, 32) # before 32
-        self.bn_g1 = nn.BatchNorm1d(32)
+        self.bn_g1 = nn.BatchNorm1d(64)
         self.bn_g2 = nn.BatchNorm1d(32)
 
         self.lin_feat = nn.Linear(32, feat_dim)
