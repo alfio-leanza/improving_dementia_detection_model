@@ -180,9 +180,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl50/results'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl60/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl60/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/ovr_fl60/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -221,19 +221,19 @@ def main():
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False)
 
         # ----------------- 2. Pesi per il sampler -----------------
-    labels = train_df['label'].values           # array (N,) con 0=HC, 1=FTD, 2=AD
+    #labels = train_df['label'].values           # array (N,) con 0=HC, 1=FTD, 2=AD
 
     # pesi:   HC=1   FTD= <dup_factor>   AD=1
-    dup_factor = 2                              # quante *volte* vuoi vedere FTD
-    class_weights = np.array([1.0, dup_factor, 1.0], dtype=np.float32)
+    #dup_factor = 2                              # quante *volte* vuoi vedere FTD
+    #class_weights = np.array([1.0, dup_factor, 1.0], dtype=np.float32)
 
-    sample_weights = class_weights[labels]      # shape = (N,)
+    #sample_weights = class_weights[labels]      # shape = (N,)
 
     # ----------------- 3. Sampler -----------------
-    sampler = WeightedRandomSampler(
-                weights=sample_weights,
-                num_samples=len(train_dataset),
-                replacement=True)
+    #sampler = WeightedRandomSampler(
+               # weights=sample_weights,
+               # num_samples=len(train_dataset),
+               # replacement=True)
 
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False,)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
@@ -248,7 +248,7 @@ def main():
     # BCE per logit binari (nessun pos_weight)
     #loss_fn  = torch.nn.BCEWithLogitsLoss()
     # ---------- FocalLoss: gamma=2, peso maggiore sui positivi FTD ----------
-    alpha = torch.tensor([0.25, 0.5, 0.25])   # HC / FTD / AD
+    alpha = torch.tensor([0.2, 0.6, 0.2])   # HC / FTD / AD
     loss_fn = FocalLoss(gamma=2.0, alpha=alpha)    ### FOCAL MOD ###
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=args.lr, weight_decay=args.weight_decay)
