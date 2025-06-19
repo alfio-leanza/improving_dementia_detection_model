@@ -9,7 +9,7 @@ Backbone GNNCWT2D_Mk11_1sec  +  One-Vs-Rest multi-head (tre uscite binarie).
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GraphConv, global_max_pool, GATConv
+from torch_geometric.nn import GraphConv, global_max_pool
 
 
 # ------------------------------------------------------------------ #
@@ -66,8 +66,8 @@ class GNNCWT2D_Mk11_1sec(nn.Module):
         x = F.relu(self.lin4(x)); x = self.bn4(x); x = self.drop(x)
 
         x = x.view(B * self.ne, -1)
-        x = F.relu(self.g1(x, edge_index)); x = self.bn_g1(x); #x = self.drop(x)
-        x = F.relu(self.g2(x, edge_index)); x = self.bn_g2(x); #x = self.drop(x)
+        x = F.relu(self.g1(x, edge_index)); x = self.bn_g1(x); x = self.drop(x)
+        x = F.relu(self.g2(x, edge_index)); x = self.bn_g2(x); x = self.drop(x)
 
         x = global_max_pool(x, batch)
         feat = F.relu(self.lin_feat(x))                                     # (B,feat_dim)
