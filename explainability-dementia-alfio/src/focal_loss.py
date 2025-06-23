@@ -18,9 +18,7 @@ class FocalLoss(nn.Module):
 
     def forward(self, logits, targets):
         # BCE “per-sample per-classe”
-        #bce = F.binary_cross_entropy_with_logits(
-        #          logits, targets, reduction='none')
-        bce = torch.nn.BCEWithLogitsLoss(
+        bce = F.binary_cross_entropy_with_logits(
                   logits, targets, reduction='none')
         pt  = torch.exp(-bce)              # prob. del target corretto
         focal = (1 - pt) ** self.gamma * bce
