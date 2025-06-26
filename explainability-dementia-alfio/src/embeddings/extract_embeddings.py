@@ -25,25 +25,30 @@ def main(cfg):
         num_classes=cfg.num_classes,
     )
     #model.load_state_dict(torch.load(cfg.checkpoint, map_location="cpu"))
-        # --- CARICAMENTO SICURO DEL CHECKPOINT ---------------------------------
     ckpt = torch.load(cfg.checkpoint, map_location="cpu")
+    state = ckpt.get("model_state_dict", ckpt)      # estrai i pesi veri
 
-    # 1) se è stato salvato con torch.save({ ... 'model_state_dict': ... })
-    state = ckpt.get("model_state_dict", ckpt)   # fallback al dict intero
-
-    # 2) sostituisci i prefissi per compatibilità (gconv1 → g1, gconv2 → g2)
     from collections import OrderedDict
     state_fixed = OrderedDict()
     for k, v in state.items():
+        # rinomina gconv1/2  ->  g1/2
         if k.startswith("gconv1"):
             k = k.replace("gconv1", "g1", 1)
         elif k.startswith("gconv2"):
             k = k.replace("gconv2", "g2", 1)
+
+        # rinomina .GConv.   ->  .conv.
+        k = k.replace(".GConv.", ".conv.")
+
+        # salta il classificatore se le classi non combaciano
+        if k.startswith("lin6."):
+            continue
+
         state_fixed[k] = v
 
-    # 3) carica (strict=True assicura che ora tutto combaci)
-    model.load_state_dict(state_fixed, strict=True)
-    print("[✓] checkpoint caricato correttamente")
+    missing, unexpected = model.load_state_dict(state_fixed, strict=False)
+    print("[✓] pesi caricati  |  missing:", missing, " unexpected:", unexpected)
+
 
     model.cuda().eval()
 
