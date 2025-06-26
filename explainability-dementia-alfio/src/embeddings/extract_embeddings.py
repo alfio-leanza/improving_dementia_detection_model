@@ -6,7 +6,7 @@ import argparse, pandas as pd, numpy as np, torch
 from torch_geometric.loader import DataLoader
 
 from cwt_dataset import CWTGraphDataset
-from model_mk11 import GNNCWT2D_Mk11_1sec
+from model import GNNCWT2D_Mk11_1sec
 
 
 def main(cfg):
