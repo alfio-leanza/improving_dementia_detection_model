@@ -24,7 +24,27 @@ def main(cfg):
         cwt_size=(40, 500),
         num_classes=cfg.num_classes,
     )
-    model.load_state_dict(torch.load(cfg.checkpoint, map_location="cpu"))
+    #model.load_state_dict(torch.load(cfg.checkpoint, map_location="cpu"))
+        # --- CARICAMENTO SICURO DEL CHECKPOINT ---------------------------------
+    ckpt = torch.load(cfg.checkpoint, map_location="cpu")
+
+    # 1) se è stato salvato con torch.save({ ... 'model_state_dict': ... })
+    state = ckpt.get("model_state_dict", ckpt)   # fallback al dict intero
+
+    # 2) sostituisci i prefissi per compatibilità (gconv1 → g1, gconv2 → g2)
+    from collections import OrderedDict
+    state_fixed = OrderedDict()
+    for k, v in state.items():
+        if k.startswith("gconv1"):
+            k = k.replace("gconv1", "g1", 1)
+        elif k.startswith("gconv2"):
+            k = k.replace("gconv2", "g2", 1)
+        state_fixed[k] = v
+
+    # 3) carica (strict=True assicura che ora tutto combaci)
+    model.load_state_dict(state_fixed, strict=True)
+    print("[✓] checkpoint caricato correttamente")
+
     model.cuda().eval()
 
     out = []
