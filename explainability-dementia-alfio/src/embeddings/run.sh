@@ -7,5 +7,5 @@
 
 # 2) Pooling per paziente
 python3 aggregate_patient_embeds.py \
- --input /Volumes/Extreme SSD/progetto_tesi/improving_dementia_detection_model/explainability-dementia-alfio/local/embeddings/checkpoint/embeddings.parquet \
+ --input /home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/embeddings/checkpoint/embeddings.parquet \
  --output /home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/embeddings/checkpoint/patient_embeds.pkl
