@@ -55,34 +55,29 @@ def main(cfg):
     out = []
     with torch.no_grad():
         for batch in dl:
-            x = batch.x.view(batch.num_graphs, 19, 40, 500).cuda()
+            x  = batch.x.view(batch.num_graphs, 19, 40, 500).cuda()
             ei = batch.edge_index.cuda()
             b  = batch.batch.cuda()
 
-            emb = model.embed(x, ei, b).cpu().numpy()
+            emb = model.embed(x, ei, b).cpu().numpy()   # solo embedding
 
+            # gt_label arriva così com'è dal dataset
             for e, pid, f, s, t, lab in zip(
-                emb,
-                batch.pid,
-                batch.crop_file,
-                batch.start_sec,
-                batch.end_sec,
-                batch.gt_label):
+                    emb,
+                    batch.pid,
+                    batch.crop_file,
+                    batch.start_sec,
+                    batch.end_sec,
+                    batch.gt_label):        # <-- ground-truth, NON pred
 
-                # se arrivano tensor( … ) li converto
-                s_val     = float(s) if torch.is_tensor(s) else s
-                t_val     = float(t) if torch.is_tensor(t) else t
-                label_val = int(lab) if torch.is_tensor(lab) else lab
-
-            out.append({
-                "patient_id": pid,
-                "file":       f,
-                "start_sec":  s_val,
-                "end_sec":    t_val,
-                "gt_label":   label_val,
-                "embedding":  e.tolist(),
-            })
-
+                out.append({
+                    "patient_id": pid,
+                    "file":       f,
+                    "start_sec":  float(s) if torch.is_tensor(s) else s,
+                    "end_sec":    float(t) if torch.is_tensor(t) else t,
+                    "gt_label":   int(lab)  if torch.is_tensor(lab) else lab,
+                    "embedding":  e.tolist(),
+                })
 
     df = pd.DataFrame(out)
     Path(cfg.output).parent.mkdir(parents=True, exist_ok=True)
