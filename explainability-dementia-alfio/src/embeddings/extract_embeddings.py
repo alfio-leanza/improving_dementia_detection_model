@@ -94,5 +94,5 @@ if __name__ == "__main__":
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--output",     default="embeddings.parquet")
     p.add_argument("--batch_size", type=int, default=64)
-    p.add_argument("--num_classes", type=int, default=2)
+    p.add_argument("--num_classes", type=int, default=3)
     main(p.parse_args())

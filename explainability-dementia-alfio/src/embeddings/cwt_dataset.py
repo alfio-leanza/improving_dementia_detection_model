@@ -88,10 +88,10 @@ class CWTGraphDataset(Dataset):
         data = Data(x=x, edge_index=self.edge_index.clone(), y=y)
 
         # ---- metadati --------------------------------------------------------
-        data.pid        = rec["patient_id"]
+        data.pid        = rec["original_rec"]
         data.crop_file  = rec["crop_file"]
-        data.start_sec  = rec["start_sec"]
-        data.end_sec    = rec["end_sec"]
+        data.start_sec  = rec["crop_start_sample"]
+        data.end_sec    = rec["crop_end_sample"]
         data.gt_label   = rec["label"]
 
         return data

@@ -8,7 +8,7 @@ from pathlib import Path
 def main(cfg):
     seg = pd.read_parquet(cfg.input)
     pat = (
-        seg.groupby("patient_id")["embedding"]
+        seg.groupby("original_rec")["embedding"]
         .apply(lambda v: np.mean(np.stack(v), axis=0))
     )
     Path(cfg.output).parent.mkdir(parents=True, exist_ok=True)
