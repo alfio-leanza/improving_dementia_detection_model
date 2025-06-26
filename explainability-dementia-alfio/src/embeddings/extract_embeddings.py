@@ -67,18 +67,22 @@ def main(cfg):
                 batch.crop_file,
                 batch.start_sec,
                 batch.end_sec,
-                batch.gt_label,
-            ):
-                out.append(
-                    {
-                        "patient_id": pid,
-                        "file": f,
-                        "start_sec": s,
-                        "end_sec": t,
-                        "gt_label": lab,
-                        "embedding": e.tolist(),  # 32-element list
-                    }
-                )
+                batch.gt_label):
+
+                # se arrivano tensor( … ) li converto
+                s_val     = float(s) if torch.is_tensor(s) else s
+                t_val     = float(t) if torch.is_tensor(t) else t
+                label_val = int(lab) if torch.is_tensor(lab) else lab
+
+            out.append({
+                "patient_id": pid,
+                "file":       f,
+                "start_sec":  s_val,
+                "end_sec":    t_val,
+                "gt_label":   label_val,
+                "embedding":  e.tolist(),
+            })
+
 
     df = pd.DataFrame(out)
     Path(cfg.output).parent.mkdir(parents=True, exist_ok=True)
