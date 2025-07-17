@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from models_artifact import *
+from models import *
 from single_fold_arcface import evaluate_and_save
 
 """
@@ -185,10 +185,10 @@ def main():
     seed_everything(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
-    session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact_all/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact_all/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/local/artifact_all/results'
+    session_timestamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_seed{args.seed}"
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/checkpoints/train_{session_timestamp}/'
+    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/results'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
