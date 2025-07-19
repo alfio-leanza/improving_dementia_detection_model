@@ -29,7 +29,7 @@ for SEED in "${SEEDS[@]}"; do
         --batch_size 256 \
         --num_workers 8 \
         --num_epochs 80 \
-        --weight_decay 1e-7
+        --weight_decay 1e-8
 done
 
 

@@ -188,7 +188,7 @@ def main():
     session_timestamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_seed{args.seed}"
     writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/runs/train_{}'.format(session_timestamp))
     checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/checkpoints/train_{session_timestamp}/'
-    results_save_dir = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/results'
+    results_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/results/train_{session_timestamp}'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
