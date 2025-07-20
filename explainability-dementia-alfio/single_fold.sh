@@ -16,11 +16,11 @@ python3 src/single_fold.py \
 
 #!/bin/bash
 
-SEEDS=(1234 2025 2001 42 1024)
+SEEDS=(1234 2025 2001 42 1024 22)
 
 for SEED in "${SEEDS[@]}"; do
     echo "Running with seed $SEED"
-    python3 src/single_fold.py \
+    python3 src/single_ovr.py \
         --ds_name "miltiadous_deriv_uV_d1.0s_o0.0s" \
         --classes "hc-ftd-ad" \
         --ds_parent_dir "/home/tom/dataset_eeg" \
