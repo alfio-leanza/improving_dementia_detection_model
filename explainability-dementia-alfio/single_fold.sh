@@ -16,7 +16,7 @@ python3 src/single_fold.py \
 
 #!/bin/bash
 
-SEEDS=(1234 2025 2001 42 1024 22)
+SEEDS=(1234 2025 2001 42 1024)
 
 for SEED in "${SEEDS[@]}"; do
     echo "Running with seed $SEED"
