@@ -179,7 +179,7 @@ def main():
     seed_everything(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
-    session_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    session_timestamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_seed{args.seed}"
     writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr/runs/train_{}'.format(session_timestamp))
     checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr/checkpoints/train_{session_timestamp}/'
     results_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr/results/train_{session_timestamp}'
