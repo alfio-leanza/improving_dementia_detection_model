@@ -21,6 +21,7 @@ from datasets import *
 from model_ovr import *                 ### OVR MOD ###  (nuovo import)
 from single_fold_arcface import evaluate_and_save
 from focal_loss import *
+import json
 
 """
 This is a copy of kfold_crossval.py made to work with a single custom fold (Miltiadous).
@@ -205,6 +206,12 @@ def main():
         train_subjects = [37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
         val_subjects = [54, 55, 56, 57, 58, 59, 79, 80, 81, 82, 83, 22, 23, 24, 25, 26, 27, 28]
         test_subjects = [60, 61, 62, 63, 64, 65, 84, 85, 86, 87, 88, 29, 30, 31, 32, 33, 34, 35, 36]
+        #redistribute the splits in training and validation based on the seed
+        all_trainval = train_subjects + val_subjects
+        rng = np.random.default_rng(args.seed)
+        rng.shuffle(all_trainval)
+        train_subjects = all_trainval[:51]
+        val_subjects = all_trainval[51:]
     else:
         raise Exception('Handcrafted splitting not available for the selected classes.')
 
@@ -373,6 +380,17 @@ def main():
                     device, results_save_dir, loss_fn)
     evaluate_and_save(model, test_df,  test_dataset,  'test',
                     device, results_save_dir, loss_fn)
+    #save the splits
+    split_dict = {
+        'train_subjects': train_subjects,
+        'val_subjects': val_subjects,
+        'test_subjects': test_subjects
+    }
+
+    os.makedirs(results_save_dir, exist_ok=True)
+    json_path = os.path.join(results_save_dir, 'subject_splits.json')
+    with open(json_path, 'w') as f:
+        json.dump(split_dict, f, indent=4)
 
 print('Finish')
 
