@@ -181,9 +181,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_seed{args.seed}"
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr_1e7/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr_1e7/checkpoints/train_{session_timestamp}/'
-    results_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr_1e7/results/train_{session_timestamp}'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr_CV/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr_CV/checkpoints/train_{session_timestamp}/'
+    results_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_ovr_CV/results/train_{session_timestamp}'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
