@@ -186,9 +186,9 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     session_timestamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_seed{args.seed}"
-    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_CV/runs/train_{}'.format(session_timestamp))
-    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_CV/checkpoints/train_{session_timestamp}/'
-    results_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed_CV/results/train_{session_timestamp}'
+    writer = SummaryWriter('/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/runs/train_{}'.format(session_timestamp))
+    checkpoint_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/checkpoints/train_{session_timestamp}/'
+    results_save_dir = f'/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/results/train_{session_timestamp}'
     os.makedirs(checkpoint_save_dir, exist_ok=True)
 
     annot_file_path = os.path.join(args.ds_parent_dir, args.ds_name, f"annot_all_{args.classes}.csv")
@@ -212,11 +212,11 @@ def main():
         val_subjects = [54, 55, 56, 57, 58, 59, 79, 80, 81, 82, 83, 22, 23, 24, 25, 26, 27, 28]
         test_subjects = [60, 61, 62, 63, 64, 65, 84, 85, 86, 87, 88, 29, 30, 31, 32, 33, 34, 35, 36]
         #redistribute the splits in training and validation based on the seed
-        all_trainval = train_subjects + val_subjects
+        '''all_trainval = train_subjects + val_subjects
         rng = np.random.default_rng(args.seed)
         rng.shuffle(all_trainval)
         train_subjects = all_trainval[:51]
-        val_subjects = all_trainval[51:]
+        val_subjects = all_trainval[51:]'''
     else:
         raise Exception('Handcrafted splitting not available for the selected classes.')
 
@@ -377,7 +377,7 @@ def main():
     evaluate_and_save(model, test_df,  test_dataset,  'test',
                     device, results_save_dir, loss_fn)
 #save the splits
-    split_dict = {
+    '''split_dict = {
         'train_subjects': train_subjects,
         'val_subjects': val_subjects,
         'test_subjects': test_subjects
@@ -386,7 +386,7 @@ def main():
     os.makedirs(results_save_dir, exist_ok=True)
     json_path = os.path.join(results_save_dir, 'subject_splits.json')
     with open(json_path, 'w') as f:
-        json.dump(split_dict, f, indent=4)
+        json.dump(split_dict, f, indent=4)'''
 
 print('Finish')
 
