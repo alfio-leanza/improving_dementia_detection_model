@@ -127,14 +127,14 @@ for seed_dir in sorted(BASE_DIR.glob("checkpoints/train_*")):
     print(f"\n========================\nSeed: {seed_name}\n========================")
     dfs, splits, loaders = {}, {}, {}
 
-    for split in ["training", "validation", "test"]:
+    for split in ["trai", "val", "test"]:
         csv_path = inf_dir / f"{split}_inferences.csv"
         df = pd.read_csv(csv_path)
         df["label"] = (df["pred_label"] == df["true_label"]).astype(int)
         df = df[["crop_file", "label"]].reset_index(drop=True)
         ds = CWTCropDataset(df, CWT_DIR, None)
         splits[split] = ds
-        loaders[split] = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(split=="training"))
+        loaders[split] = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(split=="train"))
 
     model = load_monitor_model(ckpt_path)
     criterion = nn.CrossEntropyLoss()
@@ -142,8 +142,8 @@ for seed_dir in sorted(BASE_DIR.glob("checkpoints/train_*")):
 
     best_acc, patience = 0.0, PATIENCE
     for ep in range(1, EPOCHS+1):
-        tr_loss, tr_acc = run_epoch(model, loaders["training"], criterion, optimizer)
-        val_loss, val_acc = run_epoch(model, loaders["validation"], criterion)
+        tr_loss, tr_acc = run_epoch(model, loaders["train"], criterion, optimizer)
+        val_loss, val_acc = run_epoch(model, loaders["val"], criterion)
         print(f"[{seed_name}] Ep {ep:02d} | tr_acc {tr_acc:.3f} | val_acc {val_acc:.3f}")
         if val_acc > best_acc:
             best_acc, patience = val_acc, PATIENCE
@@ -155,7 +155,7 @@ for seed_dir in sorted(BASE_DIR.glob("checkpoints/train_*")):
                 break
 
     model.load_state_dict(torch.load(out_dir / "best_monitor.pt"))
-    for split in ["training", "validation", "test"]:
+    for split in ["train", "val", "test"]:
         evaluate_split(model, loaders[split], split, out_dir)
 
     print(f"✓ Risultati salvati in → {out_dir.resolve()}")
