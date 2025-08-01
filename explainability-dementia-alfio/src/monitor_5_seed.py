@@ -127,7 +127,7 @@ for seed_dir in sorted(BASE_DIR.glob("checkpoints/train_*")):
     print(f"\n========================\nSeed: {seed_name}\n========================")
     dfs, splits, loaders = {}, {}, {}
 
-    for split in ["trai", "val", "test"]:
+    for split in ["train", "val", "test"]:
         csv_path = inf_dir / f"{split}_inferences.csv"
         df = pd.read_csv(csv_path)
         df["label"] = (df["pred_label"] == df["true_label"]).astype(int)
