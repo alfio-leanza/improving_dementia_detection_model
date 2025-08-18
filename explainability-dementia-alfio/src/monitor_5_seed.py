@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# monitor_good_bad_multi.py — versione multi-seed monitor training
+# monitor_good_bad_multi.py — versione multi-seed *e* multi-cartella (tutte le 5_seed*)
 
 import os, json, random
 from pathlib import Path
@@ -17,9 +17,8 @@ import seaborn as sns
 # 1. PERCORSI & PARAMETRI
 # ————————————————————
 CWT_DIR = Path("/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt")
-BASE_DIR = Path("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed")
-OUT_BASE = Path("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio/5_seed/monitor")
-OUT_BASE.mkdir(exist_ok=True)
+ROOT_DIR = Path("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio")
+EXPERIMENT_GLOB = "5_seed*"  
 
 BATCH_SIZE = 64
 LR = 1e-4
@@ -50,7 +49,7 @@ def load_monitor_model(ckpt_path):
     model3 = GNNCWT2D_Mk11_1sec(19, (40,500), 3)
     ckpt = torch.load(ckpt_path, map_location="cpu")
     state = ckpt.get("state_dict") or ckpt.get("model_state_dict") or ckpt
-    state = {k.replace("model.","").replace("module.",""):v for k,v in state.items()}
+    state = {k.replace("model.","").replace("module.",""): v for k,v in state.items()}
     model3.load_state_dict(state, strict=False)
 
     model2 = GNNCWT2D_Mk11_1sec(19, (40,500), 2)
@@ -115,47 +114,72 @@ def evaluate_split(model, loader, split, out_dir):
     plt.tight_layout(); plt.savefig(out_dir/f"confusion_matrix_{split}.png", dpi=150); plt.close()
 
 # ————————————————————
-# 5. MAIN PER OGNI SEED
+# 5. MAIN: PER OGNI CARTELLA 5_seed* → PER OGNI SEED
 # ————————————————————
-for seed_dir in sorted(BASE_DIR.glob("checkpoints/train_*")):
-    seed_name = seed_dir.name  # es. train_20250510_172519
-    ckpt_path = seed_dir / "best_val_acc.pt"
-    inf_dir = BASE_DIR / "results" / seed_name
-    out_dir = OUT_BASE / seed_name
-    out_dir.mkdir(exist_ok=True)
+exp_dirs = [d for d in sorted(ROOT_DIR.glob(EXPERIMENT_GLOB)) if d.is_dir()]
+if not exp_dirs:
+    raise SystemExit(f"Nessuna cartella che combaci con '{EXPERIMENT_GLOB}' trovata in {ROOT_DIR}")
 
-    print(f"\n========================\nSeed: {seed_name}\n========================")
-    dfs, splits, loaders = {}, {}, {}
+for BASE_DIR in exp_dirs:
+    OUT_BASE = BASE_DIR / "monitor"
+    OUT_BASE.mkdir(exist_ok=True)
 
-    for split in ["train", "val", "test"]:
-        csv_path = inf_dir / f"{split}_inferences.csv"
-        df = pd.read_csv(csv_path)
-        df["label"] = (df["pred_label"] == df["true_label"]).astype(int)
-        df = df[["crop_file", "label"]].reset_index(drop=True)
-        ds = CWTCropDataset(df, CWT_DIR, None)
-        splits[split] = ds
-        loaders[split] = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(split=="train"))
+    ckpt_root = BASE_DIR / "checkpoints"
+    res_root  = BASE_DIR / "results"
+    if not ckpt_root.exists() or not res_root.exists():
+        print(f"\n⏭️  {BASE_DIR.name}: mancano 'checkpoints' o 'results' → salto.")
+        continue
 
-    model = load_monitor_model(ckpt_path)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=LR)
+    print(f"\n========================\nEsperimento: {BASE_DIR.name}\n========================")
 
-    best_acc, patience = 0.0, PATIENCE
-    for ep in range(1, EPOCHS+1):
-        tr_loss, tr_acc = run_epoch(model, loaders["train"], criterion, optimizer)
-        val_loss, val_acc = run_epoch(model, loaders["val"], criterion)
-        print(f"[{seed_name}] Ep {ep:02d} | tr_acc {tr_acc:.3f} | val_acc {val_acc:.3f}")
-        if val_acc > best_acc:
-            best_acc, patience = val_acc, PATIENCE
-            torch.save(model.state_dict(), out_dir / "best_monitor.pt")
-        else:
-            patience -= 1
-            if patience == 0:
-                print("Early-stopping!")
-                break
+    # loop sui seed (train_*)
+    for seed_dir in sorted(ckpt_root.glob("train_*")):
+        seed_name = seed_dir.name  # es. train_20250510_172519
+        ckpt_path = seed_dir / "best_val_acc.pt"
+        inf_dir   = res_root / seed_name
+        out_dir   = OUT_BASE / seed_name
+        out_dir.mkdir(exist_ok=True)
 
-    model.load_state_dict(torch.load(out_dir / "best_monitor.pt"))
-    for split in ["train", "val", "test"]:
-        evaluate_split(model, loaders[split], split, out_dir)
+        # Check file necessari
+        csv_paths = {s: inf_dir/f"{s}_inferences.csv" for s in ["train","val","test"]}
+        if not ckpt_path.exists() or not all(p.exists() for p in csv_paths.values()):
+            print(f"⏭️  {BASE_DIR.name}/{seed_name}: ckpt o csv mancanti → salto.")
+            continue
 
-    print(f"✓ Risultati salvati in → {out_dir.resolve()}")
+        print(f"\n— Seed: {seed_name}")
+
+        # prepara dataset/loader per i tre split
+        splits, loaders = {}, {}
+        for split in ["train", "val", "test"]:
+            df = pd.read_csv(csv_paths[split])
+            df["label"] = (df["pred_label"] == df["true_label"]).astype(int)
+            df = df[["crop_file", "label"]].reset_index(drop=True)
+            ds = CWTCropDataset(df, CWT_DIR, None)
+            splits[split] = ds
+            loaders[split] = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=(split=="train"))
+
+        # modello + train
+        model = load_monitor_model(ckpt_path)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=LR)
+
+        best_acc, patience = 0.0, PATIENCE
+        for ep in range(1, EPOCHS+1):
+            tr_loss, tr_acc = run_epoch(model, loaders["train"], criterion, optimizer)
+            val_loss, val_acc = run_epoch(model, loaders["val"], criterion)
+            print(f"[{BASE_DIR.name}/{seed_name}] Ep {ep:02d} | tr_acc {tr_acc:.3f} | val_acc {val_acc:.3f}")
+            if val_acc > best_acc:
+                best_acc, patience = val_acc, PATIENCE
+                torch.save(model.state_dict(), out_dir / "best_monitor.pt")
+            else:
+                patience -= 1
+                if patience == 0:
+                    print("Early-stopping!")
+                    break
+
+        # best eval + salvataggi
+        model.load_state_dict(torch.load(out_dir / "best_monitor.pt"))
+        for split in ["train", "val", "test"]:
+            evaluate_split(model, loaders[split], split, out_dir)
+
+        print(f"✓ Risultati salvati in → {out_dir.resolve()}")
