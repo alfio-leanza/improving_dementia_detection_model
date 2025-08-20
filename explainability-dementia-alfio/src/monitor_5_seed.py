@@ -18,7 +18,7 @@ import seaborn as sns
 # ————————————————————
 CWT_DIR = Path("/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt")
 ROOT_DIR = Path("/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio")
-EXPERIMENT_GLOB = "5_seed*"  
+EXPERIMENT_GLOB = "5_seed_ovr"  
 
 BATCH_SIZE = 64
 LR = 1e-4
