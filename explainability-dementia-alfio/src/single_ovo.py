@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from model_ovo import *                 ### OVO MOD ###
+from model_ovo import *                 
 from single_fold_arcface import evaluate_and_save
 
 """

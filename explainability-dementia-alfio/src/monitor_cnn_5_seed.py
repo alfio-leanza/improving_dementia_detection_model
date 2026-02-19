@@ -8,10 +8,10 @@ from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt, seaborn as sns
 
 # ================== CONFIG ==================
-project_root = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio'  # cartella che contiene le 5_seed*
-cwt_root     = '/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt'                     # radice dei CWT (usata per caricare i .npy)
-out_root     = os.path.join(project_root, 'monitor_cnn')                              # dove salvare i risultati del monitor
-annot_csv    = None  # es. '/home/tom/.../annot_all_hc-ftd-ad.csv' se i CSV NON hanno true_label
+project_root = '/home/alfio/improving_dementia_detection_model/explainability-dementia-alfio'  
+cwt_root     = '/home/tom/dataset_eeg/miltiadous_deriv_uV_d1.0s_o0.0s/cwt'                     
+out_root     = os.path.join(project_root, 'monitor_cnn')                              
+annot_csv    = None  
 
 epochs       = 20
 batch_size   = 64
@@ -19,7 +19,7 @@ lr           = 1e-3
 weight_decay = 1e-3
 num_workers  = 4
 augment_sigma= 0.01    # gauss noise std per augment
-seed_global  = 42       # per riproducibilità (di base)
+seed_global  = 42       
 
 os.makedirs(out_root, exist_ok=True)
 

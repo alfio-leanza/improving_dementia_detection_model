@@ -18,7 +18,7 @@ from sklearn.model_selection import StratifiedKFold, LeaveOneOut
 from torch.utils.data import WeightedRandomSampler
 from utils import seed_everything, write_tboard_dict
 from datasets import *
-from model_ovr import *                 ### OVR MOD ###  (nuovo import)
+from model_ovr import *                 
 from single_fold_arcface import evaluate_and_save
 from focal_loss import *
 import json
@@ -227,34 +227,19 @@ def main():
     val_dataset = CWTGraphDataset(val_df, crop_data_path, None, augment = False)
     test_dataset = CWTGraphDataset(test_df, crop_data_path, None, augment = False)
 
-        # ----------------- 2. Pesi per il sampler -----------------
-    #labels = train_df['label'].values           # array (N,) con 0=HC, 1=FTD, 2=AD
-
-    # pesi:   HC=1   FTD= <dup_factor>   AD=1
-    #dup_factor = 2                              # quante *volte* vuoi vedere FTD
-    #class_weights = np.array([1.0, dup_factor, 1.0], dtype=np.float32)
-
-    #sample_weights = class_weights[labels]      # shape = (N,)
-
-    # ----------------- 3. Sampler -----------------
-    #sampler = WeightedRandomSampler(
-               # weights=sample_weights,
-               # num_samples=len(train_dataset),
-               # replacement=True)
-
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=False)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
     num_classes = args.classes.count('-') + 1
 
-    # ---------------- modello One-Vs-Rest --------------------------- #
+    # ---------------- One-Vs-Rest --------------------------- #
     backbone = GNNCWT2D_Mk11_1sec(feat_dim=64)
     model    = OneVsRestGNN(backbone, feat_dim=64).to(device)
 
-    # BCE per logit binari (nessun pos_weight)
+    # BCE 
     loss_fn  = torch.nn.BCEWithLogitsLoss()
-    # ---------- FocalLoss: gamma=2, peso maggiore sui positivi FTD ----------
+    # ---------- FocalLoss: gamma=2, higher weight on true FTD ----------
     #alpha = torch.tensor([0.25, 0.70, 0.25])   # HC / FTD / AD
     #loss_fn = FocalLoss(gamma=2.0, alpha=alpha)    ### FOCAL MOD ###
     optimizer = torch.optim.Adam(model.parameters(),
