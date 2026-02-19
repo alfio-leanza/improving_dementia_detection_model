@@ -1,4 +1,4 @@
-# Data_science_thesis — EEG-based Dementia Classification with Graph Neural Networks
+# Data_science_thesis - Deep Learning in Healthcare: Dementia diagnosis through GNN
 
 This repository contains the code and materials developed for my MSc thesis on **dementia diagnosis from resting-state EEG** using **Graph Neural Networks (GNNs)**.
 
